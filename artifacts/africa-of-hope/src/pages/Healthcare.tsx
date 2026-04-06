@@ -95,6 +95,23 @@ export default function Healthcare() {
         </div>
       </section>
 
+      {/* Image Feature */}
+      <section className="relative h-56 sm:h-72 overflow-hidden">
+        <img
+          src="https://images.unsplash.com/photo-1576671081837-49000212a370?w=1600&q=80"
+          alt="Healthcare — mobile clinics and medical care across Africa"
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0d3d1a]/85 via-[#0d3d1a]/50 to-transparent flex items-center">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">
+              "Healthcare that reaches the last mile — bringing medicine where there are no hospitals."
+            </p>
+            <p className="text-[#d4a017] text-sm font-semibold mt-2 uppercase tracking-widest">Africa of Hope — Health-Care</p>
+          </div>
+        </div>
+      </section>
+
       {/* Partners in Health */}
       <section className="py-20 bg-[#0d3d1a] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

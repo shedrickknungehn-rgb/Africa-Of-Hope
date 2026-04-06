@@ -106,6 +106,23 @@ export default function About() {
         </div>
       </section>
 
+      {/* Image Feature */}
+      <section className="relative h-56 sm:h-72 overflow-hidden">
+        <img
+          src="https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=1600&q=80"
+          alt="Africa of Hope — empowering communities across Africa"
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0d3d1a]/85 via-[#0d3d1a]/50 to-transparent flex items-center">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">
+              "Founded on the belief that Africa's greatest resource is its people."
+            </p>
+            <p className="text-[#d4a017] text-sm font-semibold mt-2 uppercase tracking-widest">Africa of Hope — Arms &amp; Service</p>
+          </div>
+        </div>
+      </section>
+
       {/* Mission & Vision */}
       <section className="py-20 bg-[#f7f5f0]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

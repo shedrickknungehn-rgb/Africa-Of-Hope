@@ -1,17 +1,17 @@
 import { Link } from "wouter";
-import { Heart, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Youtube } from "lucide-react";
+import { Heart, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Youtube, MessageCircle } from "lucide-react";
 import { openDonate } from "@/lib/donate";
 
 export default function Footer() {
   return (
     <footer className="bg-[#0a2812] text-white">
       {/* Main footer */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
           {/* Brand */}
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-[#d4a017] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[#d4a017] flex items-center justify-center flex-shrink-0">
                 <span className="text-[#0f0f0f] font-black text-sm">AH</span>
               </div>
               <div>
@@ -24,7 +24,7 @@ export default function Footer() {
               </div>
             </div>
             <p className="text-white/60 text-sm leading-relaxed mb-5">
-              A nonprofit organization dedicated to transforming lives across Africa through charity, education, healthcare, and media empowerment.
+              A nonprofit organization dedicated to transforming lives across Africa through charity, education, healthcare, and media empowerment. Based in Liberia — operating globally.
             </p>
             <div className="flex gap-3">
               {[
@@ -61,7 +61,7 @@ export default function Footer() {
                     href={href}
                     className="text-white/60 hover:text-[#d4a017] text-sm transition-colors duration-200 flex items-center gap-2"
                   >
-                    <span className="w-1 h-1 rounded-full bg-[#d4a017]/50 inline-block" />
+                    <span className="w-1 h-1 rounded-full bg-[#d4a017]/50 inline-block flex-shrink-0" />
                     {label}
                   </Link>
                 </li>
@@ -75,18 +75,34 @@ export default function Footer() {
             <ul className="space-y-3">
               <li className="flex items-start gap-3">
                 <MapPin className="w-4 h-4 text-[#d4a017] mt-0.5 flex-shrink-0" />
-                <span className="text-white/60 text-sm">Africa of Hope Headquarters, Nairobi, Kenya</span>
+                <span className="text-white/60 text-sm">Liberia — Physically &amp; Online</span>
               </li>
-              <li className="flex items-center gap-3">
-                <Phone className="w-4 h-4 text-[#d4a017] flex-shrink-0" />
-                <a href="tel:+254000000000" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors">
-                  +254 000 000 000
-                </a>
+              <li className="flex items-start gap-3">
+                <Phone className="w-4 h-4 text-[#d4a017] mt-0.5 flex-shrink-0" />
+                <div>
+                  <a href="tel:0760599659" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors block">
+                    0760599659
+                  </a>
+                  <a href="tel:088061379" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors block">
+                    088061379
+                  </a>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <MessageCircle className="w-4 h-4 text-[#d4a017] mt-0.5 flex-shrink-0" />
+                <div>
+                  <a href="https://wa.me/231776679963" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors block">
+                    +231776679963
+                  </a>
+                  <a href="https://wa.me/231760599659" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors block">
+                    +231760599659
+                  </a>
+                </div>
               </li>
               <li className="flex items-center gap-3">
                 <Mail className="w-4 h-4 text-[#d4a017] flex-shrink-0" />
-                <a href="mailto:info@africaofhope.org" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors">
-                  info@africaofhope.org
+                <a href="mailto:Afrohope033@gmail.com" className="text-white/60 hover:text-[#d4a017] text-sm transition-colors break-all">
+                  Afrohope033@gmail.com
                 </a>
               </li>
             </ul>
@@ -96,15 +112,29 @@ export default function Footer() {
           <div>
             <h4 className="text-[#d4a017] font-bold text-sm uppercase tracking-widest mb-5">Make a Difference</h4>
             <p className="text-white/60 text-sm leading-relaxed mb-5">
-              Your generosity fuels our mission. Every contribution, big or small, changes lives.
+              Your generosity fuels our mission. Every contribution, big or small, changes lives across Africa.
             </p>
             <button
               onClick={openDonate}
-              className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-bold text-sm px-5 py-2.5 rounded-full shadow transition-all duration-200 hover:scale-105"
+              className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-bold text-sm px-5 py-2.5 rounded-full shadow transition-all duration-200 hover:scale-105 mb-4"
             >
               <Heart className="w-4 h-4" />
               Donate Now
             </button>
+            {/* School Admissions */}
+            <div className="bg-white/5 border border-[#d4a017]/20 rounded-xl p-4">
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017] animate-pulse" />
+                <span className="text-[#d4a017] text-xs font-bold uppercase tracking-wide">Admissions Open</span>
+              </div>
+              <p className="text-white/60 text-xs leading-relaxed mb-2">School of Professional Studies — 2026/2027 intake now open. Tuition FREE.</p>
+              <a
+                href="mailto:Afrohope033@gmail.com?subject=School Admission 2026/2027"
+                className="text-[#d4a017] text-xs font-bold hover:underline"
+              >
+                Apply → Afrohope033@gmail.com
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -112,10 +142,10 @@ export default function Footer() {
       {/* Bottom bar */}
       <div className="border-t border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-white/40 text-xs">
-            &copy; {new Date().getFullYear()} Africa of Hope. All rights reserved. Registered Non-Profit Organization.
+          <p className="text-white/40 text-xs text-center sm:text-left">
+            &copy; {new Date().getFullYear()} Africa of Hope — Arms &amp; Service. All rights reserved. Registered Non-Profit Organization.
           </p>
-          <div className="flex gap-5">
+          <div className="flex flex-wrap justify-center gap-4">
             {["Privacy Policy", "Terms of Use", "Cookie Policy"].map((item) => (
               <a key={item} href="#" className="text-white/40 hover:text-[#d4a017] text-xs transition-colors">
                 {item}

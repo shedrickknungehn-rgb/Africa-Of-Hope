@@ -96,6 +96,23 @@ export default function Charity() {
         </div>
       </section>
 
+      {/* Image Feature */}
+      <section className="relative h-56 sm:h-72 overflow-hidden">
+        <img
+          src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&q=80"
+          alt="Charity — community food aid across Africa"
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0d3d1a]/85 via-[#0d3d1a]/50 to-transparent flex items-center">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">
+              "Hunger is not a destiny — it's a solvable problem."
+            </p>
+            <p className="text-[#d4a017] text-sm font-semibold mt-2 uppercase tracking-widest">Africa of Hope — Charity Initiative</p>
+          </div>
+        </div>
+      </section>
+
       {/* Key Initiatives */}
       <section className="py-20 bg-[#0d3d1a] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

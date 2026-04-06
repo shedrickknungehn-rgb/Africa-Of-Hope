@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { Heart, BookOpen, Stethoscope, Tv, ChevronRight, Users, Globe, Award, ArrowRight } from "lucide-react";
-import { useEffect, useRef } from "react";
 import { openDonate } from "@/lib/donate";
+import HeroSlider from "@/components/HeroSlider";
 
 const impactStats = [
   { value: "50,000+", label: "Lives Impacted", icon: Users },
@@ -67,77 +67,10 @@ const testimonials = [
 ];
 
 export default function Home() {
-  const heroRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = heroRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      el.style.transform = `translateY(${window.scrollY * 0.3}px)`;
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   return (
     <div className="pt-[57px]">
-      {/* Hero */}
-      <section className="relative min-h-screen flex items-center overflow-hidden">
-        <div
-          ref={heroRef}
-          className="absolute inset-0 gradient-hero"
-          style={{ willChange: "transform" }}
-        />
-        {/* Decorative circles */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-20 -right-20 w-96 h-96 rounded-full bg-[#d4a017]/10 blur-3xl" />
-          <div className="absolute bottom-0 -left-20 w-80 h-80 rounded-full bg-[#1a6b2a]/30 blur-3xl" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full border border-[#d4a017]/10" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full border border-[#d4a017]/10" />
-        </div>
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 z-10">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 bg-[#d4a017]/15 border border-[#d4a017]/30 rounded-full px-4 py-1.5 mb-6">
-              <span className="w-2 h-2 rounded-full bg-[#d4a017] animate-pulse" />
-              <span className="text-[#d4a017] text-xs font-semibold uppercase tracking-widest">
-                Non-Profit Organization
-              </span>
-            </div>
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white leading-[1.05] mb-6">
-              Transforming{" "}
-              <span className="text-gradient-gold">Africa</span>
-              <br />
-              One Life at a Time
-            </h1>
-            <p className="text-white/70 text-lg sm:text-xl leading-relaxed mb-10 max-w-2xl">
-              Africa of Hope — Arms &amp; Service is a nonprofit committed to bringing charity, education, healthcare, and media empowerment to the most vulnerable communities across Africa.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <button
-                onClick={openDonate}
-                className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-black px-8 py-4 rounded-full text-base shadow-xl transition-all duration-200 hover:scale-105"
-              >
-                <Heart className="w-5 h-5" />
-                Donate Now
-              </button>
-              <Link
-                href="/about"
-                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-8 py-4 rounded-full text-base border border-white/20 transition-all duration-200"
-              >
-                Our Mission
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce">
-          <div className="w-px h-8 bg-white/30" />
-          <span className="text-white/40 text-xs uppercase tracking-widest">Scroll</span>
-        </div>
-      </section>
+      {/* Hero Slider */}
+      <HeroSlider />
 
       {/* Impact Stats */}
       <section className="bg-[#d4a017] py-14">
