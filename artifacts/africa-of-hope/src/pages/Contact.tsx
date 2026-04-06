@@ -40,23 +40,28 @@ export default function Contact() {
                 {[
                   {
                     icon: MapPin,
-                    label: "Headquarters",
-                    value: "Africa of Hope, P.O. Box 00100, Nairobi, Kenya",
+                    label: "Location",
+                    value: "Liberia — Physically & Online",
                   },
                   {
                     icon: Phone,
                     label: "Phone",
-                    value: "+254 000 000 000",
+                    value: "0760599659 / 088061379",
+                  },
+                  {
+                    icon: Phone,
+                    label: "WhatsApp",
+                    value: "+231776679963 / +231760599659",
                   },
                   {
                     icon: Mail,
                     label: "Email",
-                    value: "info@africaofhope.org",
+                    value: "Afrohope033@gmail.com",
                   },
                   {
                     icon: Clock,
                     label: "Office Hours",
-                    value: "Monday – Friday: 8:00 AM – 5:00 PM EAT",
+                    value: "Monday – Friday: 8:00 AM – 5:00 PM",
                   },
                 ].map(({ icon: Icon, label, value }) => (
                   <div key={label} className="flex items-start gap-4">
@@ -71,26 +76,33 @@ export default function Contact() {
                 ))}
               </div>
 
-              {/* Regional Offices */}
-              <div className="bg-[#f7f5f0] rounded-2xl p-7">
-                <h3 className="font-black text-[#0f0f0f] mb-5 flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-[#d4a017]" />
-                  Regional Offices
-                </h3>
-                <div className="space-y-4">
+              {/* School of Professional Studies */}
+              <div className="bg-[#0d3d1a] rounded-2xl p-7 text-white">
+                <div className="inline-flex items-center gap-2 bg-[#d4a017]/20 border border-[#d4a017]/30 rounded-full px-3 py-1 mb-4">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017] animate-pulse" />
+                  <span className="text-[#d4a017] text-xs font-bold uppercase tracking-widest">Admissions 2026/2027 Open</span>
+                </div>
+                <h3 className="font-black text-white text-lg mb-2">School of Professional Studies</h3>
+                <p className="text-white/60 text-sm mb-5">Certificate &amp; Diploma courses — Tuition FREE, only registration fees apply.</p>
+                <div className="space-y-3 mb-5">
                   {[
-                    { region: "West Africa", city: "Lagos, Nigeria" },
-                    { region: "Southern Africa", city: "Johannesburg, South Africa" },
-                    { region: "East Africa", city: "Kampala, Uganda" },
-                    { region: "North Africa", city: "Cairo, Egypt" },
-                    { region: "Central Africa", city: "Kinshasa, DR Congo" },
-                  ].map(({ region, city }) => (
-                    <div key={region} className="flex items-center justify-between">
-                      <span className="text-gray-600 text-sm font-medium">{region}</span>
-                      <span className="text-[#1a6b2a] text-sm font-bold">{city}</span>
+                    { label: "Phone", value: "0760599659 / 088061379" },
+                    { label: "WhatsApp", value: "+231776679963 / +231760599659" },
+                    { label: "Email", value: "Afrohope033@gmail.com" },
+                    { label: "Location", value: "Liberia — Physical & Online" },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex justify-between text-sm border-b border-white/10 pb-2">
+                      <span className="text-white/50">{label}</span>
+                      <span className="text-white font-medium text-right">{value}</span>
                     </div>
                   ))}
                 </div>
+                <a
+                  href="mailto:Afrohope033@gmail.com?subject=School Admission 2026/2027"
+                  className="block text-center bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-black py-2.5 rounded-xl text-sm transition-all"
+                >
+                  Apply for Admission
+                </a>
               </div>
             </div>
 

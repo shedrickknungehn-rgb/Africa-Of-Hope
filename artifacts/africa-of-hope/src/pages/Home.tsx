@@ -154,6 +154,46 @@ export default function Home() {
         </div>
       </section>
 
+      {/* School Admissions Banner */}
+      <section className="bg-[#0d3d1a] py-12 border-y border-[#d4a017]/20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row items-center gap-6 lg:gap-12">
+            <div className="flex items-center gap-4 flex-shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-[#d4a017]/20 border border-[#d4a017]/30 flex items-center justify-center">
+                <BookOpen className="w-6 h-6 text-[#d4a017]" />
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 bg-[#d4a017]/20 rounded-full px-3 py-0.5 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017] animate-pulse" />
+                  <span className="text-[#d4a017] text-xs font-bold uppercase tracking-widest">Now Open</span>
+                </div>
+                <h3 className="text-white font-black text-lg leading-tight">Admissions 2026/2027</h3>
+              </div>
+            </div>
+            <div className="flex-1 text-center lg:text-left">
+              <p className="text-white/70 text-sm leading-relaxed">
+                <span className="text-white font-bold">Africa of Hope School of Professional Studies</span> — Certificate &amp; Diploma courses now enrolling in Liberia (physically &amp; online). Tuition FREE, only registration applies. Courses from 1 to 9 months.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 flex-shrink-0">
+              <Link
+                href="/education"
+                className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-black px-5 py-2.5 rounded-full text-sm transition-all hover:scale-105"
+              >
+                View Courses
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+              <a
+                href="mailto:Afrohope033@gmail.com?subject=School Admission 2026/2027"
+                className="flex items-center gap-2 border border-white/30 hover:border-white/60 text-white font-bold px-5 py-2.5 rounded-full text-sm transition-all"
+              >
+                Apply Now
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Our Arms */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
