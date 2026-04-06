@@ -1,4 +1,5 @@
 import { Mail, Phone, MapPin, Clock, Heart, MessageSquare, Send } from "lucide-react";
+import { openDonate } from "@/lib/donate";
 import { useState } from "react";
 
 export default function Contact() {
@@ -9,12 +10,6 @@ export default function Contact() {
     e.preventDefault();
     setSent(true);
     setForm({ name: "", email: "", subject: "", message: "" });
-  };
-
-  const openDonate = () => {
-    if (typeof window !== "undefined" && (window as any).formsapp) {
-      (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-    }
   };
 
   return (

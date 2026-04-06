@@ -1,4 +1,5 @@
 import { Heart, Target, Eye, Users, Award, Globe } from "lucide-react";
+import { openDonate } from "@/lib/donate";
 
 const values = [
   {
@@ -43,12 +44,6 @@ const team = [
 ];
 
 export default function About() {
-  const openDonate = () => {
-    if (typeof window !== "undefined" && (window as any).formsapp) {
-      (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-    }
-  };
-
   return (
     <div className="pt-[57px]">
       {/* Hero */}

@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { Heart, BookOpen, Stethoscope, Tv, ChevronRight, Users, Globe, Award, ArrowRight } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { openDonate } from "@/lib/donate";
 
 const impactStats = [
   { value: "50,000+", label: "Lives Impacted", icon: Users },
@@ -77,12 +78,6 @@ export default function Home() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  const openDonate = () => {
-    if (typeof window !== "undefined" && (window as any).formsapp) {
-      (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-    }
-  };
 
   return (
     <div className="pt-[57px]">

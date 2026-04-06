@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, X, Heart } from "lucide-react";
+import { openDonate } from "@/lib/donate";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -73,11 +74,7 @@ export default function Navbar() {
               </Link>
             ))}
             <button
-              onClick={() => {
-                if (typeof window !== "undefined" && (window as any).formsapp) {
-                  (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-                }
-              }}
+              onClick={openDonate}
               className="ml-3 flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-bold text-sm px-4 py-2 rounded-full shadow transition-all duration-200 hover:scale-105"
             >
               <Heart className="w-3.5 h-3.5" />
@@ -113,12 +110,7 @@ export default function Navbar() {
               </Link>
             ))}
             <button
-              onClick={() => {
-                setOpen(false);
-                if (typeof window !== "undefined" && (window as any).formsapp) {
-                  (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-                }
-              }}
+              onClick={() => { setOpen(false); openDonate(); }}
               className="mt-2 flex items-center justify-center gap-2 bg-[#d4a017] text-[#0f0f0f] font-bold text-sm px-4 py-2.5 rounded-full"
             >
               <Heart className="w-4 h-4" />

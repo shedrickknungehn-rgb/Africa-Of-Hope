@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Home, Heart } from "lucide-react";
+import { openDonate } from "@/lib/donate";
 
 export default function NotFound() {
   return (
@@ -19,11 +20,7 @@ export default function NotFound() {
             Back to Home
           </Link>
           <button
-            onClick={() => {
-              if (typeof window !== "undefined" && (window as any).formsapp) {
-                (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-              }
-            }}
+            onClick={openDonate}
             className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-3 rounded-full border border-white/20 transition-all"
           >
             <Heart className="w-4 h-4" />

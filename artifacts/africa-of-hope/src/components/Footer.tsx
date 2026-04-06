@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Heart, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Youtube } from "lucide-react";
+import { openDonate } from "@/lib/donate";
 
 export default function Footer() {
   return (
@@ -98,11 +99,7 @@ export default function Footer() {
               Your generosity fuels our mission. Every contribution, big or small, changes lives.
             </p>
             <button
-              onClick={() => {
-                if (typeof window !== "undefined" && (window as any).formsapp) {
-                  (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-                }
-              }}
+              onClick={openDonate}
               className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-bold text-sm px-5 py-2.5 rounded-full shadow transition-all duration-200 hover:scale-105"
             >
               <Heart className="w-4 h-4" />

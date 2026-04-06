@@ -1,4 +1,5 @@
 import { Stethoscope, Heart, Activity, Baby, Eye, Syringe, ArrowRight } from "lucide-react";
+import { openDonate } from "@/lib/donate";
 
 const services = [
   {
@@ -35,12 +36,6 @@ const stats = [
 ];
 
 export default function Healthcare() {
-  const openDonate = () => {
-    if (typeof window !== "undefined" && (window as any).formsapp) {
-      (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-    }
-  };
-
   return (
     <div className="pt-[57px]">
       {/* Hero */}

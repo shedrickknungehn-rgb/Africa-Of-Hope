@@ -1,5 +1,6 @@
 import { Heart, Package, Home, Utensils, Users, ChevronRight, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
+import { openDonate } from "@/lib/donate";
 
 const programs = [
   {
@@ -50,12 +51,6 @@ const initiatives = [
 ];
 
 export default function Charity() {
-  const openDonate = () => {
-    if (typeof window !== "undefined" && (window as any).formsapp) {
-      (window as any).formsapp("69d3e6688d0ad42decac4b79", "popup");
-    }
-  };
-
   return (
     <div className="pt-[57px]">
       {/* Hero */}

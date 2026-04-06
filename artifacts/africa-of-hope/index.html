@@ -12,11 +12,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet">
-    <!-- forms.app embed -->
-    <script src="https://forms.app/cdn/embed.js" type="text/javascript" async defer onload="new formsapp('69d3e6688d0ad42decac4b79', 'popup', {'overlay':'rgba(45,45,45,0.5)','button':{'color':'#ff9e24','text':'Click here!'},'width':'800px','height':'600px','openingAnimation':{'entrance':'animate__fadeIn','exit':'animate__fadeOut'}}, 'https://pouy61qb.forms.app');"></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- forms.app embed: stored instance + global opener -->
+    <button formsappId="69d3e6688d0ad42decac4b79" style="display:none" id="formsapp-hidden-trigger"></button>
+    <script src="https://forms.app/cdn/embed.js" type="text/javascript" async defer onload="
+      window._formsappInstance = new formsapp('69d3e6688d0ad42decac4b79', 'popup', {
+        'overlay': 'rgba(45,45,45,0.5)',
+        'button': { 'color': '#ff9e24', 'text': 'Donate Now' },
+        'width': '800px',
+        'height': '600px',
+        'openingAnimation': { 'entrance': 'animate__fadeIn', 'exit': 'animate__fadeOut' }
+      }, 'https://pouy61qb.forms.app');
+      window.openDonateForm = function() {
+        if (window._formsappInstance && typeof window._formsappInstance.open === 'function') {
+          window._formsappInstance.open();
+        } else {
+          var trigger = document.getElementById('formsapp-hidden-trigger');
+          if (trigger) trigger.click();
+        }
+      };
+    "></script>
   </body>
 </html>

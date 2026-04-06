@@ -1,11 +1,6 @@
 import { Heart } from "lucide-react";
 import { useEffect, useState } from "react";
-
-declare global {
-  interface Window {
-    formsapp?: (id: string, type: string, config?: object, url?: string) => void;
-  }
-}
+import { openDonate } from "@/lib/donate";
 
 export default function DonateFab() {
   const [visible, setVisible] = useState(false);
@@ -16,11 +11,6 @@ export default function DonateFab() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const openDonate = () => {
-    if (window.formsapp) {
-      window.formsapp("69d3e6688d0ad42decac4b79", "popup");
-    }
-  };
 
   return (
     <button
