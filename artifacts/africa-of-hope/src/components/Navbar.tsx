@@ -10,6 +10,7 @@ const navLinks = [
   { href: "/education", label: "Education" },
   { href: "/healthcare", label: "Health-Care" },
   { href: "/media", label: "Media / TV" },
+  { href: "/gallery", label: "Gallery" },
   { href: "/contact", label: "Contact" },
 ];
 

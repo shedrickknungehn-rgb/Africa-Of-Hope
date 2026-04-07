@@ -1,54 +1,58 @@
 import { Heart, Package, Home, Utensils, Users, ChevronRight, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 import { openDonate } from "@/lib/donate";
+import { useInView } from "@/hooks/useInView";
 
 const programs = [
-  {
-    icon: Utensils,
-    title: "Food Security Program",
-    description: "Monthly food packages to over 10,000 families in food-insecure regions, ensuring no one goes to bed hungry.",
-    impact: "10,000+ families fed monthly",
-  },
-  {
-    icon: Home,
-    title: "Emergency Shelter",
-    description: "Rapid response shelter provision for communities displaced by conflict, drought, floods, and other disasters.",
-    impact: "3,500+ shelter kits deployed",
-  },
-  {
-    icon: Package,
-    title: "Essential Supplies",
-    description: "Hygiene kits, clothing, blankets, and household essentials delivered directly to families in need.",
-    impact: "50,000+ kits distributed",
-  },
-  {
-    icon: Users,
-    title: "Community Development",
-    description: "Long-term community building projects including water wells, sanitation facilities, and livelihood support.",
-    impact: "120+ communities served",
-  },
+  { icon: Utensils, title: "Food Security Program", description: "Monthly food packages to over 10,000 families in food-insecure regions, ensuring no one goes to bed hungry.", impact: "10,000+ families fed monthly" },
+  { icon: Home, title: "Emergency Shelter", description: "Rapid response shelter provision for communities displaced by conflict, drought, floods, and other disasters.", impact: "3,500+ shelter kits deployed" },
+  { icon: Package, title: "Essential Supplies", description: "Hygiene kits, clothing, blankets, and household essentials delivered directly to families in need.", impact: "50,000+ kits distributed" },
+  { icon: Users, title: "Community Development", description: "Long-term community building projects including water wells, sanitation facilities, and livelihood support.", impact: "120+ communities served" },
 ];
 
 const initiatives = [
-  {
-    title: "The 1000 Families Campaign",
-    description: "Our flagship charity drive provides comprehensive support packages to 1,000 selected families per quarter — covering food, hygiene, clothing, and educational materials.",
-    badge: "Flagship Initiative",
-    badgeColor: "#d4a017",
-  },
-  {
-    title: "Disaster Relief Fund",
-    description: "When catastrophe strikes, we mobilize within 48 hours. Our rapid response teams have delivered relief in floods, droughts, and conflict zones across 15 countries.",
-    badge: "Emergency Response",
-    badgeColor: "#1a6b2a",
-  },
-  {
-    title: "Widow & Orphan Support",
-    description: "Dedicated care packages, counseling, and livelihood training for widows and orphaned children — ensuring the most vulnerable are never left behind.",
-    badge: "Vulnerable Groups",
-    badgeColor: "#0d3d1a",
-  },
+  { title: "The 1000 Families Campaign", description: "Our flagship charity drive provides comprehensive support packages to 1,000 selected families per quarter — covering food, hygiene, clothing, and educational materials.", badge: "Flagship Initiative", badgeColor: "#d4a017" },
+  { title: "Disaster Relief Fund", description: "When catastrophe strikes, we mobilize within 48 hours. Our rapid response teams have delivered relief in floods, droughts, and conflict zones across 15 countries.", badge: "Emergency Response", badgeColor: "#1a6b2a" },
+  { title: "Widow & Orphan Support", description: "Dedicated care packages, counseling, and livelihood training for widows and orphaned children — ensuring the most vulnerable are never left behind.", badge: "Vulnerable Groups", badgeColor: "#0d3d1a" },
 ];
+
+const fundAllocation = [
+  { label: "Direct Aid & Food", percent: 58, color: "#1a6b2a" },
+  { label: "Healthcare Access", percent: 18, color: "#d4a017" },
+  { label: "Education Support", percent: 14, color: "#0d3d1a" },
+  { label: "Administration", percent: 10, color: "#888" },
+];
+
+function ProgressBar({ label, percent, color }: { label: string; percent: number; color: string }) {
+  const { ref, inView } = useInView();
+  return (
+    <div ref={ref as React.RefObject<HTMLDivElement>} className="mb-5">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-semibold text-[#0f0f0f]">{label}</span>
+        <span className="text-sm font-black" style={{ color }}>{percent}%</span>
+      </div>
+      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-1000 ease-out"
+          style={{ width: inView ? `${percent}%` : "0%", backgroundColor: color, transitionDelay: "200ms" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AnimatedSection({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  const { ref, inView } = useInView();
+  return (
+    <div
+      ref={ref as React.RefObject<HTMLDivElement>}
+      className={`transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function Charity() {
   return (
@@ -74,23 +78,27 @@ export default function Charity() {
       {/* Programs */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">What We Do</span>
-            <h2 className="text-4xl font-black text-[#0f0f0f]">Our Charity Programs</h2>
-          </div>
+          <AnimatedSection>
+            <div className="text-center mb-14">
+              <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">What We Do</span>
+              <h2 className="text-4xl font-black text-[#0f0f0f]">Our Charity Programs</h2>
+            </div>
+          </AnimatedSection>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {programs.map(({ icon: Icon, title, description, impact }) => (
-              <div key={title} className="bg-[#f7f5f0] rounded-2xl p-8 hover:shadow-md transition-all duration-200">
-                <div className="w-12 h-12 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center mb-5">
-                  <Icon className="w-6 h-6 text-[#1a6b2a]" />
+            {programs.map(({ icon: Icon, title, description, impact }, i) => (
+              <AnimatedSection key={title} delay={i * 80}>
+                <div className="bg-[#f7f5f0] rounded-2xl p-8 hover:shadow-md transition-all duration-200 h-full">
+                  <div className="w-12 h-12 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center mb-5">
+                    <Icon className="w-6 h-6 text-[#1a6b2a]" />
+                  </div>
+                  <h3 className="font-black text-[#0f0f0f] text-lg mb-3">{title}</h3>
+                  <p className="text-gray-500 text-sm leading-relaxed mb-4">{description}</p>
+                  <div className="inline-flex items-center gap-2 bg-[#d4a017]/10 border border-[#d4a017]/30 rounded-full px-3 py-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017]" />
+                    <span className="text-[#d4a017] text-xs font-semibold">{impact}</span>
+                  </div>
                 </div>
-                <h3 className="font-black text-[#0f0f0f] text-lg mb-3">{title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed mb-4">{description}</p>
-                <div className="inline-flex items-center gap-2 bg-[#d4a017]/10 border border-[#d4a017]/30 rounded-full px-3 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017]" />
-                  <span className="text-[#d4a017] text-xs font-semibold">{impact}</span>
-                </div>
-              </div>
+              </AnimatedSection>
             ))}
           </div>
         </div>
@@ -98,17 +106,58 @@ export default function Charity() {
 
       {/* Image Feature */}
       <section className="relative h-56 sm:h-72 overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&q=80"
-          alt="Charity — community food aid across Africa"
-          className="w-full h-full object-cover"
-        />
+        <img src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=1600&q=80" alt="Charity — community food aid across Africa" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0d3d1a]/85 via-[#0d3d1a]/50 to-transparent flex items-center">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">
-              "Hunger is not a destiny — it's a solvable problem."
-            </p>
+            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">"Hunger is not a destiny — it's a solvable problem."</p>
             <p className="text-[#d4a017] text-sm font-semibold mt-2 uppercase tracking-widest">Africa of Hope — Charity Initiative</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Fund Allocation */}
+      <section className="py-20 bg-[#f7f5f0]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid lg:grid-cols-2 gap-14 items-center">
+            <AnimatedSection>
+              <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Transparency</span>
+              <h2 className="text-4xl font-black text-[#0f0f0f] mb-4">How We Allocate <span className="text-[#d4a017]">Your Donation</span></h2>
+              <p className="text-gray-600 text-sm leading-relaxed mb-8">
+                We are committed to responsible stewardship. Over 90 cents of every dollar you donate goes directly to program delivery — among the highest ratios in the nonprofit sector.
+              </p>
+              {fundAllocation.map((item) => (
+                <ProgressBar key={item.label} {...item} />
+              ))}
+              <p className="text-gray-400 text-xs mt-4">Based on 2024 Annual Financial Report</p>
+            </AnimatedSection>
+            <AnimatedSection delay={150}>
+              <div className="bg-[#0d3d1a] rounded-3xl p-10 text-white">
+                <h3 className="text-xl font-black mb-6 text-[#d4a017]">Why Give to Africa of Hope?</h3>
+                <div className="space-y-5">
+                  {[
+                    { title: "100% Audited", desc: "Annual independent audits ensure every dollar is properly accounted for." },
+                    { title: "Direct Impact", desc: "No unnecessary middlemen — your donation reaches communities directly." },
+                    { title: "Real Stories", desc: "We publish quarterly reports with real names, real outcomes, and real photos." },
+                    { title: "Tax Deductible", desc: "Donations may be tax-deductible in your country — contact us for documentation." },
+                  ].map(({ title, desc }) => (
+                    <div key={title} className="flex gap-4">
+                      <div className="w-2 h-2 rounded-full bg-[#d4a017] mt-2 flex-shrink-0" />
+                      <div>
+                        <div className="font-black text-sm mb-1">{title}</div>
+                        <div className="text-white/65 text-xs leading-relaxed">{desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={openDonate}
+                  className="mt-8 flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-black px-6 py-3 rounded-full text-sm transition-all hover:scale-105"
+                >
+                  <Heart className="w-4 h-4" />
+                  Donate with Confidence
+                </button>
+              </div>
+            </AnimatedSection>
           </div>
         </div>
       </section>
@@ -116,62 +165,60 @@ export default function Charity() {
       {/* Key Initiatives */}
       <section className="py-20 bg-[#0d3d1a] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <span className="text-[#d4a017] font-bold text-xs uppercase tracking-widest mb-3 block">Spotlight</span>
-            <h2 className="text-4xl font-black">Key Initiatives</h2>
-          </div>
+          <AnimatedSection>
+            <div className="text-center mb-14">
+              <span className="text-[#d4a017] font-bold text-xs uppercase tracking-widest mb-3 block">Spotlight</span>
+              <h2 className="text-4xl font-black">Key Initiatives</h2>
+            </div>
+          </AnimatedSection>
           <div className="space-y-6">
-            {initiatives.map(({ title, description, badge, badgeColor }) => (
-              <div key={title} className="bg-white/5 border border-white/10 rounded-2xl p-8 flex flex-col sm:flex-row gap-5 hover:bg-white/8 transition-colors">
-                <div className="flex-1">
-                  <div
-                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold mb-4"
-                    style={{ backgroundColor: `${badgeColor}20`, color: badgeColor, border: `1px solid ${badgeColor}30` }}
-                  >
-                    {badge}
+            {initiatives.map(({ title, description, badge, badgeColor }, i) => (
+              <AnimatedSection key={title} delay={i * 80}>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-8 flex flex-col sm:flex-row gap-5 hover:bg-white/8 transition-colors">
+                  <div className="flex-1">
+                    <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold mb-4" style={{ backgroundColor: `${badgeColor}20`, color: badgeColor, border: `1px solid ${badgeColor}30` }}>
+                      {badge}
+                    </div>
+                    <h3 className="text-white font-black text-xl mb-3">{title}</h3>
+                    <p className="text-white/65 text-sm leading-relaxed">{description}</p>
                   </div>
-                  <h3 className="text-white font-black text-xl mb-3">{title}</h3>
-                  <p className="text-white/65 text-sm leading-relaxed">{description}</p>
+                  <div className="flex items-center">
+                    <button onClick={openDonate} className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-bold text-sm px-5 py-2.5 rounded-full whitespace-nowrap transition-all">
+                      Support <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center">
-                  <button
-                    onClick={openDonate}
-                    className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-bold text-sm px-5 py-2.5 rounded-full whitespace-nowrap transition-all"
-                  >
-                    Support <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              </AnimatedSection>
             ))}
           </div>
         </div>
       </section>
 
       {/* How You Help */}
-      <section className="py-20 bg-[#f7f5f0]">
+      <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Your Impact</span>
-            <h2 className="text-4xl font-black text-[#0f0f0f]">What Your Donation Does</h2>
-          </div>
+          <AnimatedSection>
+            <div className="text-center mb-14">
+              <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Your Impact</span>
+              <h2 className="text-4xl font-black text-[#0f0f0f]">What Your Donation Does</h2>
+            </div>
+          </AnimatedSection>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { amount: "$10", impact: "Feeds a child for a week" },
               { amount: "$25", impact: "Provides hygiene kit for a family" },
               { amount: "$50", impact: "Emergency food for a family of 5" },
               { amount: "$100", impact: "Shelter kit for a displaced family" },
-            ].map(({ amount, impact }) => (
-              <button
-                key={amount}
-                onClick={openDonate}
-                className="group bg-white border-2 border-gray-100 hover:border-[#d4a017] rounded-2xl p-7 text-center transition-all duration-200 hover:shadow-md"
-              >
-                <div className="text-3xl font-black text-[#d4a017] mb-2">{amount}</div>
-                <div className="text-gray-600 text-sm leading-snug mb-4">{impact}</div>
-                <div className="inline-flex items-center gap-1 text-[#1a6b2a] font-bold text-xs group-hover:gap-2 transition-all">
-                  Give Now <ArrowRight className="w-3 h-3" />
-                </div>
-              </button>
+            ].map(({ amount, impact }, i) => (
+              <AnimatedSection key={amount} delay={i * 80}>
+                <button onClick={openDonate} className="group bg-white border-2 border-gray-100 hover:border-[#d4a017] rounded-2xl p-7 text-center transition-all duration-200 hover:shadow-md w-full">
+                  <div className="text-3xl font-black text-[#d4a017] mb-2">{amount}</div>
+                  <div className="text-gray-600 text-sm leading-snug mb-4">{impact}</div>
+                  <div className="inline-flex items-center gap-1 text-[#1a6b2a] font-bold text-xs group-hover:gap-2 transition-all">
+                    Give Now <ArrowRight className="w-3 h-3" />
+                  </div>
+                </button>
+              </AnimatedSection>
             ))}
           </div>
         </div>
@@ -182,10 +229,7 @@ export default function Charity() {
         <div className="max-w-3xl mx-auto px-4">
           <h2 className="text-3xl font-black text-[#0f0f0f] mb-4">Every Act of Giving Saves a Life</h2>
           <p className="text-[#0f0f0f]/70 mb-8">Join thousands of donors who are making a real difference across Africa.</p>
-          <button
-            onClick={openDonate}
-            className="flex items-center gap-2 mx-auto bg-[#0d3d1a] hover:bg-[#1a6b2a] text-white font-black px-8 py-4 rounded-full shadow-xl transition-all duration-200 hover:scale-105"
-          >
+          <button onClick={openDonate} className="flex items-center gap-2 mx-auto bg-[#0d3d1a] hover:bg-[#1a6b2a] text-white font-black px-8 py-4 rounded-full shadow-xl transition-all duration-200 hover:scale-105">
             <Heart className="w-5 h-5" />
             Donate to Charity Initiative
           </button>

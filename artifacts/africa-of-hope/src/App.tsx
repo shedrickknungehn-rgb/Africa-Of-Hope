@@ -12,6 +12,7 @@ import Education from "@/pages/Education";
 import Healthcare from "@/pages/Healthcare";
 import MediaTV from "@/pages/MediaTV";
 import Contact from "@/pages/Contact";
+import Gallery from "@/pages/Gallery";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ function Router() {
           <Route path="/healthcare" component={Healthcare} />
           <Route path="/media" component={MediaTV} />
           <Route path="/contact" component={Contact} />
+          <Route path="/gallery" component={Gallery} />
           <Route component={NotFound} />
         </Switch>
       </main>

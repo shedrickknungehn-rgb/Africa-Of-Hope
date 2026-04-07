@@ -1,59 +1,33 @@
-import { Tv, Mic, Camera, Radio, Globe, Heart, Play, ArrowRight } from "lucide-react";
+import { Tv, Mic, Camera, Radio, Globe, Heart, Play, ArrowRight, Youtube } from "lucide-react";
 import { openDonate } from "@/lib/donate";
+import { useInView } from "@/hooks/useInView";
 
 const programs = [
-  {
-    icon: Tv,
-    title: "Africa of Hope TV",
-    description: "Our flagship television channel broadcasting inspiring stories, development news, and community transformation across Africa and the diaspora.",
-    impact: "2M+ monthly viewers",
-  },
-  {
-    icon: Mic,
-    title: "Community Radio",
-    description: "A network of community radio stations in local languages, delivering health information, civic education, and cultural programming.",
-    impact: "45 radio stations",
-  },
-  {
-    icon: Camera,
-    title: "Documentary Films",
-    description: "Award-winning documentaries that amplify African voices, challenge narratives, and spotlight extraordinary stories of resilience.",
-    impact: "120+ films produced",
-  },
-  {
-    icon: Radio,
-    title: "Podcast Network",
-    description: "A growing network of African-led podcasts covering politics, culture, innovation, health, and entrepreneurship for global audiences.",
-    impact: "1.5M+ monthly listeners",
-  },
+  { icon: Tv, title: "Africa of Hope TV", description: "Our flagship television channel broadcasting inspiring stories, development news, and community transformation across Africa and the diaspora.", impact: "2M+ monthly viewers" },
+  { icon: Mic, title: "Community Radio", description: "A network of community radio stations in local languages, delivering health information, civic education, and cultural programming.", impact: "45 radio stations" },
+  { icon: Camera, title: "Documentary Films", description: "Award-winning documentaries that amplify African voices, challenge narratives, and spotlight extraordinary stories of resilience.", impact: "120+ films produced" },
+  { icon: Radio, title: "Podcast Network", description: "A growing network of African-led podcasts covering politics, culture, innovation, health, and entrepreneurship for global audiences.", impact: "1.5M+ monthly listeners" },
 ];
 
 const shows = [
-  {
-    title: "Voices of the Continent",
-    type: "Documentary Series",
-    description: "A six-part series profiling extraordinary Africans changing their communities from the inside out.",
-    episode: "New Season Available",
-  },
-  {
-    title: "Hope in the Harvest",
-    type: "Agricultural Feature",
-    description: "Stories of farmers transforming food security through innovation, resilience, and community cooperation.",
-    episode: "Season 3 Now Streaming",
-  },
-  {
-    title: "The Healing Hour",
-    type: "Health Awareness Show",
-    description: "Weekly health education program in partnership with our healthcare division — reaching millions with life-saving information.",
-    episode: "Live Every Sunday",
-  },
-  {
-    title: "Young Africa Rising",
-    type: "Youth Empowerment",
-    description: "Showcasing the brilliance, creativity, and determination of young Africans aged 16-30 across every sector.",
-    episode: "Episodes Daily",
-  },
+  { title: "Voices of the Continent", type: "Documentary Series", description: "A six-part series profiling extraordinary Africans changing their communities from the inside out.", episode: "New Season Available", thumb: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=600&q=80" },
+  { title: "Hope in the Harvest", type: "Agricultural Feature", description: "Stories of farmers transforming food security through innovation, resilience, and community cooperation.", episode: "Season 3 Now Streaming", thumb: "https://images.unsplash.com/photo-1536104968055-4d61aa56f46a?w=600&q=80" },
+  { title: "The Healing Hour", type: "Health Awareness Show", description: "Weekly health education program in partnership with our healthcare division — reaching millions with life-saving information.", episode: "Live Every Sunday", thumb: "https://images.unsplash.com/photo-1576671081837-49000212a370?w=600&q=80" },
+  { title: "Young Africa Rising", type: "Youth Empowerment", description: "Showcasing the brilliance, creativity, and determination of young Africans aged 16–30 across every sector.", episode: "Episodes Daily", thumb: "https://images.unsplash.com/photo-1569937756447-23f2c92d11c8?w=600&q=80" },
 ];
+
+function AnimatedSection({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  const { ref, inView } = useInView();
+  return (
+    <div
+      ref={ref as React.RefObject<HTMLDivElement>}
+      className={`transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function MediaTV() {
   return (
@@ -98,23 +72,27 @@ export default function MediaTV() {
       {/* Media Programs */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Our Platforms</span>
-            <h2 className="text-4xl font-black text-[#0f0f0f]">Media Channels &amp; Programs</h2>
-          </div>
+          <AnimatedSection>
+            <div className="text-center mb-14">
+              <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Our Platforms</span>
+              <h2 className="text-4xl font-black text-[#0f0f0f]">Media Channels &amp; Programs</h2>
+            </div>
+          </AnimatedSection>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {programs.map(({ icon: Icon, title, description, impact }) => (
-              <div key={title} className="bg-[#f7f5f0] rounded-2xl p-8 hover:shadow-md transition-all">
-                <div className="w-12 h-12 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center mb-5">
-                  <Icon className="w-6 h-6 text-[#1a6b2a]" />
+            {programs.map(({ icon: Icon, title, description, impact }, i) => (
+              <AnimatedSection key={title} delay={i * 80}>
+                <div className="bg-[#f7f5f0] rounded-2xl p-8 hover:shadow-md transition-all h-full">
+                  <div className="w-12 h-12 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center mb-5">
+                    <Icon className="w-6 h-6 text-[#1a6b2a]" />
+                  </div>
+                  <h3 className="font-black text-[#0f0f0f] text-lg mb-3">{title}</h3>
+                  <p className="text-gray-500 text-sm leading-relaxed mb-4">{description}</p>
+                  <div className="inline-flex items-center gap-2 bg-[#d4a017]/10 border border-[#d4a017]/30 rounded-full px-3 py-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017]" />
+                    <span className="text-[#d4a017] text-xs font-semibold">{impact}</span>
+                  </div>
                 </div>
-                <h3 className="font-black text-[#0f0f0f] text-lg mb-3">{title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed mb-4">{description}</p>
-                <div className="inline-flex items-center gap-2 bg-[#d4a017]/10 border border-[#d4a017]/30 rounded-full px-3 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017]" />
-                  <span className="text-[#d4a017] text-xs font-semibold">{impact}</span>
-                </div>
-              </div>
+              </AnimatedSection>
             ))}
           </div>
         </div>
@@ -122,48 +100,72 @@ export default function MediaTV() {
 
       {/* Image Feature */}
       <section className="relative h-56 sm:h-72 overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=1600&q=80"
-          alt="Media production — Africa of Hope Media & TV"
-          className="w-full h-full object-cover"
-        />
+        <img src="https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=1600&q=80" alt="Media production — Africa of Hope Media & TV" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0d3d1a]/85 via-[#0d3d1a]/50 to-transparent flex items-center">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">
-              "Africa deserves media that celebrates its resilience, culture, and extraordinary people."
-            </p>
+            <p className="text-white font-black text-xl sm:text-3xl max-w-lg leading-tight">"Africa deserves media that celebrates its resilience, culture, and extraordinary people."</p>
             <p className="text-[#d4a017] text-sm font-semibold mt-2 uppercase tracking-widest">Africa of Hope — Media / TV</p>
           </div>
         </div>
       </section>
 
-      {/* Featured Shows */}
+      {/* Featured Shows — Video Cards */}
       <section className="py-20 bg-[#0d3d1a] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <span className="text-[#d4a017] font-bold text-xs uppercase tracking-widest mb-3 block">Now Showing</span>
-            <h2 className="text-4xl font-black">Featured Programs</h2>
-          </div>
+          <AnimatedSection>
+            <div className="text-center mb-14">
+              <span className="text-[#d4a017] font-bold text-xs uppercase tracking-widest mb-3 block">Now Showing</span>
+              <h2 className="text-4xl font-black">Featured Programs</h2>
+              <p className="text-white/60 mt-3 text-sm max-w-xl mx-auto">Watch inspiring stories from across Africa — on our channels, podcasts, and streaming platforms.</p>
+            </div>
+          </AnimatedSection>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {shows.map(({ title, type, description, episode }) => (
-              <div key={title} className="bg-white/5 border border-white/10 rounded-2xl p-7 hover:bg-white/8 transition-colors group">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="text-[#d4a017] text-xs font-bold uppercase tracking-widest mb-1">{type}</div>
-                    <h3 className="text-white font-black text-xl">{title}</h3>
+            {shows.map(({ title, type, description, episode, thumb }, i) => (
+              <AnimatedSection key={title} delay={i * 80}>
+                <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/10 hover:bg-white/8 transition-colors group">
+                  <div className="relative overflow-hidden">
+                    <img src={thumb} alt={title} className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                    <div className="absolute inset-0 bg-[#0d3d1a]/60 flex items-center justify-center">
+                      <button
+                        onClick={openDonate}
+                        className="w-14 h-14 rounded-full bg-[#d4a017] hover:bg-[#f0c040] flex items-center justify-center shadow-xl transition-all hover:scale-110"
+                        title="Support this program"
+                      >
+                        <Play className="w-6 h-6 text-[#0f0f0f] ml-1" />
+                      </button>
+                    </div>
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-[#d4a017] text-[#0f0f0f] text-xs font-bold px-2.5 py-1 rounded-full">{type}</span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-[#0d3d1a]/80 rounded-full px-3 py-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017] animate-pulse" />
+                      <span className="text-white/80 text-xs font-semibold">{episode}</span>
+                    </div>
                   </div>
-                  <button className="w-10 h-10 rounded-full bg-[#d4a017] flex items-center justify-center flex-shrink-0 hover:bg-[#f0c040] transition-colors">
-                    <Play className="w-4 h-4 text-[#0f0f0f] ml-0.5" />
-                  </button>
+                  <div className="p-6">
+                    <h3 className="text-white font-black text-lg mb-2">{title}</h3>
+                    <p className="text-white/65 text-sm leading-relaxed">{description}</p>
+                  </div>
                 </div>
-                <p className="text-white/65 text-sm leading-relaxed mb-4">{description}</p>
-                <div className="inline-flex items-center gap-2 bg-[#1a6b2a]/30 border border-[#1a6b2a]/40 rounded-full px-3 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#d4a017] animate-pulse" />
-                  <span className="text-white/70 text-xs font-semibold">{episode}</span>
-                </div>
-              </div>
+              </AnimatedSection>
             ))}
           </div>
+
+          {/* YouTube CTA */}
+          <AnimatedSection delay={200}>
+            <div className="mt-10 text-center">
+              <a
+                href="https://youtube.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-[#FF0000]/90 hover:bg-[#FF0000] text-white font-black px-7 py-3 rounded-full transition-all hover:scale-105"
+              >
+                <Youtube className="w-5 h-5" />
+                Watch on YouTube
+              </a>
+              <p className="text-white/40 text-xs mt-3">Subscribe to Africa of Hope TV for new content every week</p>
+            </div>
+          </AnimatedSection>
         </div>
       </section>
 
@@ -171,7 +173,7 @@ export default function MediaTV() {
       <section className="py-20 bg-[#f7f5f0]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-14 items-center">
-            <div>
+            <AnimatedSection>
               <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Why Media Matters</span>
               <h2 className="text-4xl font-black text-[#0f0f0f] mb-6">The Power of the African Narrative</h2>
               <p className="text-gray-600 leading-relaxed mb-6">
@@ -181,35 +183,31 @@ export default function MediaTV() {
                 Our media programs are not just about entertainment. They are tools for health education, civic engagement, youth empowerment, and cultural preservation — directly supporting our other three program arms.
               </p>
               <div className="flex flex-wrap gap-4">
-                <button
-                  onClick={openDonate}
-                  className="flex items-center gap-2 bg-[#1a6b2a] hover:bg-[#155a22] text-white font-bold px-6 py-3 rounded-full text-sm transition-all"
-                >
+                <button onClick={openDonate} className="flex items-center gap-2 bg-[#1a6b2a] hover:bg-[#155a22] text-white font-bold px-6 py-3 rounded-full text-sm transition-all">
                   <Heart className="w-4 h-4" />
                   Support Media
                 </button>
-                <a
-                  href="#"
-                  className="flex items-center gap-2 bg-[#d4a017]/10 border border-[#d4a017] text-[#d4a017] hover:bg-[#d4a017] hover:text-[#0f0f0f] font-bold px-6 py-3 rounded-full text-sm transition-all"
-                >
+                <a href="mailto:Afrohope033@gmail.com?subject=Media Submission" className="flex items-center gap-2 bg-[#d4a017]/10 border border-[#d4a017] text-[#d4a017] hover:bg-[#d4a017] hover:text-[#0f0f0f] font-bold px-6 py-3 rounded-full text-sm transition-all">
                   <Globe className="w-4 h-4" />
-                  Watch Online
+                  Submit a Story
                 </a>
               </div>
-            </div>
-            <div className="space-y-5">
-              {[
-                { stat: "80%", label: "of content is produced in Africa, by Africans" },
-                { stat: "22", label: "African languages broadcast in" },
-                { stat: "40+", label: "countries where our content is distributed" },
-                { stat: "5", label: "international media awards won in 2024" },
-              ].map(({ stat, label }) => (
-                <div key={label} className="flex items-center gap-5 bg-white rounded-xl p-5 shadow-sm">
-                  <div className="text-3xl font-black text-[#d4a017] w-24 flex-shrink-0">{stat}</div>
-                  <div className="text-gray-600 text-sm leading-snug">{label}</div>
-                </div>
-              ))}
-            </div>
+            </AnimatedSection>
+            <AnimatedSection delay={150}>
+              <div className="space-y-5">
+                {[
+                  { stat: "80%", label: "of content is produced in Africa, by Africans" },
+                  { stat: "22", label: "African languages broadcast in" },
+                  { stat: "40+", label: "countries where our content is distributed" },
+                  { stat: "5", label: "international media awards won in 2024" },
+                ].map(({ stat, label }) => (
+                  <div key={label} className="flex items-center gap-5 bg-white rounded-xl p-5 shadow-sm">
+                    <div className="text-3xl font-black text-[#d4a017] w-24 flex-shrink-0">{stat}</div>
+                    <div className="text-gray-600 text-sm leading-snug">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </AnimatedSection>
           </div>
         </div>
       </section>
@@ -220,18 +218,12 @@ export default function MediaTV() {
           <h2 className="text-3xl font-black mb-4">Partner with Africa of Hope Media</h2>
           <p className="text-white/70 mb-8">Are you a journalist, filmmaker, or storyteller with an African story to tell? We want to amplify your voice.</p>
           <div className="flex flex-wrap justify-center gap-4">
-            <button
-              onClick={openDonate}
-              className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-black px-8 py-3 rounded-full transition-all hover:scale-105"
-            >
+            <button onClick={openDonate} className="flex items-center gap-2 bg-[#d4a017] hover:bg-[#f0c040] text-[#0f0f0f] font-black px-8 py-3 rounded-full transition-all hover:scale-105">
               <Heart className="w-4 h-4" />
               Support Media
             </button>
-            <a
-              href="#"
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-8 py-3 rounded-full border border-white/20 transition-all"
-            >
-              Submit a Story <ArrowRight className="w-4 h-4" />
+            <a href="mailto:Afrohope033@gmail.com?subject=Media Partnership — Africa of Hope" className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-8 py-3 rounded-full border border-white/20 transition-all">
+              Partner with Us <ArrowRight className="w-4 h-4" />
             </a>
           </div>
         </div>
