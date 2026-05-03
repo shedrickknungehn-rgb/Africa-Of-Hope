@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { BookOpen, Lock, User, Eye, EyeOff, AlertCircle } from "lucide-react";
-import { login, getSession, initSchoolData } from "./schoolData";
+import { login, getSession, setSession, initSchoolData } from "./schoolData";
 
 export default function SchoolLogin() {
   const [, navigate] = useLocation();
@@ -24,7 +24,6 @@ export default function SchoolLogin() {
     setTimeout(() => {
       const user = login(username.trim(), password);
       if (user) {
-        const { setSession } = require("./schoolData");
         setSession(user);
         navigate("/school/dashboard");
       } else {

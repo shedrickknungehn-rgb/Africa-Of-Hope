@@ -41,7 +41,7 @@ export default function Contact() {
                   {
                     icon: MapPin,
                     label: "Location",
-                    value: "Liberia — Physically & Online",
+                    value: "RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia",
                   },
                   {
                     icon: Phone,

@@ -387,30 +387,40 @@ export default function Home() {
       {/* Newsletter */}
       <NewsletterSection />
 
-      {/* CTA Banner */}
-      <section className="py-20 bg-[#d4a017]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      {/* Partners & Supporters */}
+      <section className="py-16 bg-[#f7f5f0]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <AnimatedSection>
-            <h2 className="text-4xl lg:text-5xl font-black text-[#0f0f0f] mb-4">Ready to Change a Life Today?</h2>
-            <p className="text-[#0f0f0f]/70 text-lg mb-10 max-w-xl mx-auto">
-              Every dollar you give funds food, education, healthcare, or media representation for someone who needs it most.
-            </p>
-            <div className="flex flex-wrap justify-center gap-4">
-              <button
-                onClick={openDonate}
-                className="flex items-center gap-2 bg-[#0d3d1a] hover:bg-[#1a6b2a] text-white font-black px-8 py-4 rounded-full text-base shadow-xl transition-all duration-200 hover:scale-105"
-              >
-                <Heart className="w-5 h-5" />
-                Donate Now
-              </button>
-              <Link
-                href="/contact"
-                className="flex items-center gap-2 bg-[#0f0f0f]/10 hover:bg-[#0f0f0f]/20 text-[#0f0f0f] font-bold px-8 py-4 rounded-full text-base border border-[#0f0f0f]/20 transition-all duration-200"
-              >
-                Get Involved <ChevronRight className="w-5 h-5" />
-              </Link>
+            <div className="text-center mb-12">
+              <span className="text-[#1a6b2a] font-bold text-xs uppercase tracking-widest mb-3 block">Partners &amp; Supporters</span>
+              <h2 className="text-3xl font-black text-[#0f0f0f]">Working Together for Africa</h2>
+              <p className="text-gray-500 text-sm mt-2 max-w-xl mx-auto">Africa of Hope Inc proudly partners with leading international organizations to amplify our impact on the ground.</p>
             </div>
           </AnimatedSection>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+            {[
+              { name: "UNICEF", color: "#009FDA", bg: "#E8F7FF", desc: "UN Children's Fund" },
+              { name: "WHO", color: "#005A9C", bg: "#E8EFF7", desc: "World Health Org." },
+              { name: "UNESCO", color: "#5C98BD", bg: "#EBF4FA", desc: "Education & Culture" },
+              { name: "WFP", color: "#F5A623", bg: "#FEF8EC", desc: "World Food Programme" },
+              { name: "AU", color: "#006B3F", bg: "#E6F3EE", desc: "African Union" },
+              { name: "ECOWAS", color: "#004D2C", bg: "#E0EDE7", desc: "West Africa Union" },
+              { name: "ICRC", color: "#C0272D", bg: "#FDEAEA", desc: "Red Cross" },
+              { name: "PIH", color: "#1a6b2a", bg: "#E8F5E9", desc: "Partners in Health" },
+            ].map(({ name, color, bg, desc }, i) => (
+              <AnimatedSection key={name} delay={i * 50}>
+                <div className="flex flex-col items-center gap-2 group cursor-default">
+                  <div
+                    className="w-full aspect-square rounded-2xl flex items-center justify-center shadow-sm hover:shadow-md hover:scale-105 transition-all duration-200"
+                    style={{ backgroundColor: bg, border: `2px solid ${color}20` }}
+                  >
+                    <span className="font-black text-lg" style={{ color }}>{name}</span>
+                  </div>
+                  <span className="text-gray-500 text-[10px] font-medium text-center leading-tight">{desc}</span>
+                </div>
+              </AnimatedSection>
+            ))}
+          </div>
         </div>
       </section>
     </div>
