@@ -1,0 +1,1 @@
+- [Africa of Hope school backend](aoh-school-backend.md) — school system uses JWT auth via /api/school; DB seeded on startup; password stored plaintext for admin-view feature.

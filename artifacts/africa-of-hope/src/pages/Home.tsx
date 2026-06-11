@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Heart, BookOpen, Stethoscope, Tv, ChevronRight, Users, Globe, Award, ArrowRight, Mail, CheckCircle } from "lucide-react";
+import { Heart, BookOpen, Stethoscope, Tv, Scale, ChevronRight, Users, Globe, Award, ArrowRight, Mail, CheckCircle } from "lucide-react";
 import { openDonate } from "@/lib/donate";
 import HeroSlider from "@/components/HeroSlider";
 import { useInView, useCountUp } from "@/hooks/useInView";
@@ -44,6 +44,14 @@ const arms = [
     href: "/media",
     color: "from-[#0a2812] to-[#062010]",
     accent: "#f0c040",
+  },
+  {
+    title: "Advocacy",
+    description: "Speaking truth to power — championing human rights, land rights, and policy reform across Liberia and beyond.",
+    icon: Scale,
+    href: "/advocacy",
+    color: "from-[#062010] to-[#030d07]",
+    accent: "#d4a017",
   },
 ];
 

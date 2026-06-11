@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { BookOpen, Lock, User, Eye, EyeOff, AlertCircle } from "lucide-react";
-import { login, getSession, setSession, initSchoolData } from "./schoolData";
+import { apiLogin, getSession } from "./schoolApi";
 
 export default function SchoolLogin() {
   const [, navigate] = useLocation();
@@ -12,31 +12,26 @@ export default function SchoolLogin() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    initSchoolData();
-    const session = getSession();
-    if (session) navigate("/school/dashboard");
+    if (getSession()) navigate("/school/dashboard");
   }, [navigate]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-    setTimeout(() => {
-      const user = login(username.trim(), password);
-      if (user) {
-        setSession(user);
-        navigate("/school/dashboard");
-      } else {
-        setError("Invalid username or password. Please try again.");
-      }
+    try {
+      await apiLogin(username.trim(), password);
+      navigate("/school/dashboard");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a2812] via-[#0d3d1a] to-[#1a6b2a] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/10 border border-white/20 mb-4 overflow-hidden">
             <img src="/logo.png" alt="Africa of Hope Inc" className="w-16 h-16 object-contain" />
@@ -46,7 +41,6 @@ export default function SchoolLogin() {
           <p className="text-white/50 text-xs mt-2">RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia</p>
         </div>
 
-        {/* Login Card */}
         <div className="bg-white rounded-3xl p-8 shadow-2xl">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center">
@@ -73,6 +67,7 @@ export default function SchoolLogin() {
                 <input
                   type="text"
                   required
+                  autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Enter your username"
@@ -87,6 +82,7 @@ export default function SchoolLogin() {
                 <input
                   type={showPass ? "text" : "password"}
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"

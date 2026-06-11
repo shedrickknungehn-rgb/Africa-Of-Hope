@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell } from "lucide-react";
-import { User, getCourses, clearSession } from "./schoolData";
+import { User, Course, apiGetCourses, clearSession } from "./schoolApi";
 
 type Tab = "overview" | "courses" | "join-class" | "materials";
 
 export default function StudentDashboard({ user }: { user: User }) {
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("overview");
-  const courses = getCourses().filter((c) => c.status === "active");
+  const [courses, setCourses] = useState<Course[]>([]);
+
+  useEffect(() => {
+    apiGetCourses().then((all) => setCourses(all.filter((c) => c.status === "active"))).catch(() => {});
+  }, []);
 
   const tabs = [
     { key: "overview" as Tab, label: "Overview", icon: BarChart2 },
@@ -32,7 +36,8 @@ export default function StudentDashboard({ user }: { user: User }) {
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {tabs.map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setTab(key)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${tab === key ? "bg-[#d4a017] text-[#0f0f0f] font-black" : "text-white/70 hover:text-white hover:bg-white/10"}`}>
+            <button key={key} onClick={() => setTab(key)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${tab === key ? "bg-[#d4a017] text-[#0f0f0f] font-black" : "text-white/70 hover:text-white hover:bg-white/10"}`}>
               <Icon className="w-4 h-4" />{label}
             </button>
           ))}
@@ -70,7 +75,7 @@ export default function StudentDashboard({ user }: { user: User }) {
                 <Bell className="w-5 h-5 text-[#d4a017]" />
                 <h3 className="font-black">Announcement</h3>
               </div>
-              <p className="text-white/70 text-sm">Welcome to Africa of Hope School of Professional Studies! Classes are now available. Join a live session or browse your course materials. Contact your instructor if you have questions.</p>
+              <p className="text-white/70 text-sm">Welcome to Africa of Hope School of Professional Studies! Classes are now available. Join a live session or browse your course materials.</p>
             </div>
 
             <div className="bg-white rounded-2xl p-6 shadow-sm">
@@ -121,7 +126,8 @@ export default function StudentDashboard({ user }: { user: User }) {
               <p className="text-gray-500 text-sm mb-6">Select an active course to join. Your instructor must have started the session.</p>
               <div className="space-y-3">
                 {courses.map((c) => (
-                  <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)} className="w-full flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left">
+                  <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)}
+                    className="w-full flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left">
                     <div>
                       <p className="font-bold text-sm group-hover:text-white">{c.title}</p>
                       <p className="text-xs text-gray-400 group-hover:text-white/70">{c.schedule}</p>

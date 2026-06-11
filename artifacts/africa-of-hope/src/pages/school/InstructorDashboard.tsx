@@ -1,16 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2 } from "lucide-react";
-import { User, getCourses, getUsers, clearSession } from "./schoolData";
+import { User, Course, apiGetCourses, apiGetUsers, clearSession } from "./schoolApi";
 
 type Tab = "overview" | "courses" | "students" | "start-class";
 
 export default function InstructorDashboard({ user }: { user: User }) {
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("overview");
-  const courses = getCourses().filter((c) => c.instructorId === user.id || c.instructorId === "2" || c.instructorId === "");
-  const allUsers = getUsers();
-  const myStudents = allUsers.filter((u) => u.role === "student");
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [students, setStudents] = useState<User[]>([]);
+
+  useEffect(() => {
+    apiGetCourses().then(setCourses).catch(() => {});
+    apiGetUsers().then((users) => setStudents(users.filter((u) => u.role === "student"))).catch(() => {});
+  }, []);
 
   const tabs = [
     { key: "overview" as Tab, label: "Overview", icon: BarChart2 },
@@ -29,12 +33,15 @@ export default function InstructorDashboard({ user }: { user: User }) {
         <div className="p-3 border-b border-white/10">
           <div className="bg-white/10 rounded-xl p-3">
             <p className="text-white font-bold text-sm">{user.name}</p>
-            <span className="inline-block bg-blue-500/20 text-blue-300 text-xs font-bold px-2 py-0.5 rounded-full uppercase mt-0.5">Instructor</span>
+            <span className="inline-block bg-blue-500/20 text-blue-300 text-xs font-bold px-2 py-0.5 rounded-full uppercase mt-0.5">
+              {user.role === "assistant" ? "Assistant" : "Instructor"}
+            </span>
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {tabs.map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setTab(key)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${tab === key ? "bg-[#d4a017] text-[#0f0f0f] font-black" : "text-white/70 hover:text-white hover:bg-white/10"}`}>
+            <button key={key} onClick={() => setTab(key)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${tab === key ? "bg-[#d4a017] text-[#0f0f0f] font-black" : "text-white/70 hover:text-white hover:bg-white/10"}`}>
               <Icon className="w-4 h-4" />{label}
             </button>
           ))}
@@ -44,6 +51,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
           <button onClick={() => { clearSession(); navigate("/school"); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/60 hover:text-red-300 hover:bg-red-500/10 transition-colors"><LogOut className="w-4 h-4" />Sign Out</button>
         </div>
       </div>
+
       <div className="flex-1 overflow-auto p-8">
         <div className="mb-6">
           <h1 className="text-2xl font-black text-[#0f0f0f]">Welcome, {user.name.split(" ")[0]}</h1>
@@ -55,7 +63,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
             <div className="grid grid-cols-3 gap-4">
               {[
                 { label: "My Courses", value: courses.length, color: "bg-[#1a6b2a]" },
-                { label: "Total Students", value: myStudents.length, color: "bg-[#d4a017]" },
+                { label: "Total Students", value: students.length, color: "bg-[#d4a017]" },
                 { label: "Live Sessions", value: 0, color: "bg-blue-600" },
               ].map(({ label, value, color }) => (
                 <div key={label} className="bg-white rounded-2xl p-6 shadow-sm text-center">
@@ -69,7 +77,8 @@ export default function InstructorDashboard({ user }: { user: User }) {
               <h3 className="font-black text-[#0f0f0f] mb-4">Quick Start Live Class</h3>
               <div className="grid gap-3">
                 {courses.slice(0, 3).map((c) => (
-                  <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)} className="flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left">
+                  <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)}
+                    className="flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left">
                     <div>
                       <p className="font-bold text-sm group-hover:text-white">{c.title}</p>
                       <p className="text-xs text-gray-400 group-hover:text-white/70">{c.schedule}</p>
@@ -118,7 +127,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
             <table className="w-full">
               <thead><tr className="bg-[#f7f5f0] border-b border-gray-100">{["Name", "Username", "Email"].map((h) => <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-5 py-3">{h}</th>)}</tr></thead>
               <tbody>
-                {myStudents.map((s) => (
+                {students.map((s) => (
                   <tr key={s.id} className="border-b border-gray-50 hover:bg-[#f7f5f0]/50">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
@@ -143,7 +152,8 @@ export default function InstructorDashboard({ user }: { user: User }) {
               <p className="text-gray-500 text-sm mb-6">Select a course to launch a live session with video, screen sharing, breakout rooms, and chat.</p>
               <div className="space-y-3">
                 {courses.map((c) => (
-                  <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)} className="w-full flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left">
+                  <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)}
+                    className="w-full flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left">
                     <div>
                       <p className="font-bold text-sm group-hover:text-white">{c.title}</p>
                       <p className="text-xs text-gray-400 group-hover:text-white/70">{c.duration} · {c.schedule}</p>
@@ -151,7 +161,8 @@ export default function InstructorDashboard({ user }: { user: User }) {
                     <Video className="w-5 h-5 text-[#1a6b2a] group-hover:text-white" />
                   </button>
                 ))}
-                <button onClick={() => navigate("/school/class/general")} className="w-full flex items-center justify-between p-4 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-xl transition-all group text-left">
+                <button onClick={() => navigate("/school/class/general")}
+                  className="w-full flex items-center justify-between p-4 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-xl transition-all group text-left">
                   <div>
                     <p className="font-bold text-sm group-hover:text-white">General Meeting Room</p>
                     <p className="text-xs text-gray-400 group-hover:text-white/70">Open session for all participants</p>
