@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import DonateFab from "@/components/DonateFab";
+import LiveChat from "@/components/LiveChat";
 import Home from "@/pages/Home";
 import About from "@/pages/About";
 import Charity from "@/pages/Charity";
@@ -29,7 +30,7 @@ function AppRoutes() {
     <>
       {!isSchool && <Navbar />}
       <Switch>
-        {/* School portal — full-screen, no Navbar/Footer */}
+        {/* School portal — full-screen, no Navbar/Footer/FABs */}
         <Route path="/school" component={SchoolLogin} />
         <Route path="/school/dashboard" component={SchoolDashboard} />
         <Route path="/school/class/:id" component={LiveClass} />
@@ -48,6 +49,7 @@ function AppRoutes() {
       </Switch>
       {!isSchool && <Footer />}
       {!isSchool && <DonateFab />}
+      {!isSchool && <LiveChat />}
     </>
   );
 }
