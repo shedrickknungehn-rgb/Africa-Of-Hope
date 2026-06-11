@@ -29,9 +29,11 @@ export default function StudentDashboard({ user }: { user: User }) {
 
   const Sidebar = () => (
     <div className="h-full flex flex-col bg-[#0d3d1a]">
-      <div className="p-5 border-b border-white/10">
-        <img src="/logo.png" alt="AOH" className="w-10 h-10 object-contain mx-auto mb-2" />
-        <p className="text-white font-black text-sm text-center">AOH School Portal</p>
+      <div className="p-4 border-b border-white/10">
+        <div className="bg-white rounded-xl px-3 py-2 mx-auto w-fit mb-2 shadow-md">
+          <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-9 w-auto object-contain" />
+        </div>
+        <p className="text-[#d4a017] text-[10px] text-center font-bold tracking-widest uppercase mt-1">School Portal</p>
       </div>
       <div className="p-3 border-b border-white/10">
         <div className="bg-white/10 rounded-xl p-3">
@@ -79,8 +81,10 @@ export default function StudentDashboard({ user }: { user: User }) {
         {/* Mobile header */}
         <div className="md:hidden flex items-center gap-3 bg-[#0d3d1a] px-4 py-3 flex-shrink-0 shadow-lg">
           <button onClick={() => setSidebarOpen(true)} className="text-white p-1 touch-manipulation"><Menu className="w-6 h-6" /></button>
-          <img src="/logo.png" alt="AOH" className="w-8 h-8 object-contain" />
-          <span className="text-white font-black text-sm flex-1">AOH School Portal</span>
+          <div className="bg-white rounded-lg px-2 py-1">
+            <img src="/logo-full.png" alt="AOH" className="h-6 w-auto object-contain" />
+          </div>
+          <span className="text-white font-black text-sm flex-1">School Portal</span>
           <span className="text-white/60 text-xs truncate max-w-[80px]">{user.name.split(" ")[0]}</span>
         </div>
 

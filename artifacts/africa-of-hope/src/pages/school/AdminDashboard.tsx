@@ -93,10 +93,11 @@ export default function AdminDashboard({ user }: { user: User }) {
 
   const Sidebar = () => (
     <div className="h-full flex flex-col bg-[#0d3d1a]">
-      <div className="p-5 border-b border-white/10">
-        <img src="/logo.png" alt="AOH" className="w-12 h-12 object-contain mx-auto mb-2" />
-        <p className="text-white font-black text-sm text-center leading-tight">Africa of Hope Inc</p>
-        <p className="text-[#d4a017] text-xs text-center">School Portal</p>
+      <div className="p-4 border-b border-white/10">
+        <div className="bg-white rounded-xl px-3 py-2 mx-auto w-fit mb-2 shadow-md">
+          <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-9 w-auto object-contain" />
+        </div>
+        <p className="text-[#d4a017] text-[10px] text-center font-bold tracking-widest uppercase mt-1">School Portal</p>
       </div>
       <div className="p-3 border-b border-white/10">
         <div className="bg-white/10 rounded-xl p-3">
@@ -158,9 +159,11 @@ export default function AdminDashboard({ user }: { user: User }) {
           <button onClick={() => setSidebarOpen(true)} className="text-white p-1 touch-manipulation" aria-label="Open menu">
             <Menu className="w-6 h-6" />
           </button>
-          <img src="/logo.png" alt="AOH" className="w-8 h-8 object-contain" />
+          <div className="bg-white rounded-lg px-2 py-1">
+            <img src="/logo-full.png" alt="AOH" className="h-6 w-auto object-contain" />
+          </div>
           <div className="flex-1 min-w-0">
-            <span className="text-white font-black text-sm">AOH School Portal</span>
+            <span className="text-white font-black text-sm">School Portal</span>
           </div>
           <span className="text-white/60 text-xs truncate max-w-[100px]">{user.name.split(" ")[0]}</span>
         </div>

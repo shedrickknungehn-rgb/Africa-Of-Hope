@@ -30,7 +30,9 @@ export default function LiveClass() {
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-[#0d3d1a] border-b border-white/10 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="AOH" className="w-8 h-8 object-contain" />
+          <div className="bg-white rounded-lg px-2 py-1">
+            <img src="/logo-full.png" alt="AOH" className="h-6 w-auto object-contain" />
+          </div>
           <div>
             <p className="text-white font-black text-sm leading-none">
               {course ? course.title : "Live Class"}

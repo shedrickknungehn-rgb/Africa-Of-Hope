@@ -121,7 +121,7 @@ export default function LiveChat() {
         {/* Header */}
         <div className="bg-[#0d3d1a] px-4 py-3.5 flex items-center gap-3 flex-shrink-0">
           <div className="relative">
-            <img src="/logo.png" alt="AOH" className="w-9 h-9 rounded-full object-contain bg-white p-0.5" />
+            <img src="/logo-dark.png" alt="AOH" className="w-9 h-9 rounded-full object-cover" />
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-[#0d3d1a]" />
           </div>
           <div className="flex-1 min-w-0">
@@ -152,7 +152,7 @@ export default function LiveChat() {
             <div key={m.id} className={`flex ${m.from === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[82%] ${m.from === "user" ? "" : "flex items-end gap-2"}`}>
                 {m.from === "bot" && (
-                  <img src="/logo.png" alt="" className="w-6 h-6 rounded-full object-contain bg-white border border-gray-200 flex-shrink-0 mb-1" />
+                  <img src="/logo-dark.png" alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0 mb-1" />
                 )}
                 <div>
                   <div
@@ -173,7 +173,7 @@ export default function LiveChat() {
           {typing && (
             <div className="flex justify-start">
               <div className="flex items-end gap-2">
-                <img src="/logo.png" alt="" className="w-6 h-6 rounded-full object-contain bg-white border border-gray-200" />
+                <img src="/logo-dark.png" alt="" className="w-6 h-6 rounded-full object-cover" />
                 <div className="bg-white border border-gray-100 shadow-sm px-4 py-3 rounded-2xl rounded-bl-sm">
                   <div className="flex gap-1 items-center">
                     {[0, 0.15, 0.3].map((delay) => (
@@ -245,7 +245,7 @@ export default function LiveChat() {
           className="fixed bottom-24 right-4 sm:right-6 z-50 bg-[#0d3d1a] text-white rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl cursor-pointer hover:bg-[#1a6b2a] transition-colors"
           onClick={() => setMinimized(false)}
         >
-          <img src="/logo.png" alt="" className="w-7 h-7 rounded-full object-contain bg-white p-0.5" />
+          <img src="/logo-dark.png" alt="" className="w-7 h-7 rounded-full object-cover" />
           <div>
             <p className="text-sm font-black leading-none">{BOT_NAME}</p>
             <p className="text-[#d4a017] text-xs">Click to expand</p>

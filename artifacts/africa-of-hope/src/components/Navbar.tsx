@@ -67,15 +67,13 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 sm:gap-3 group flex-shrink-0">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden bg-white flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform flex-shrink-0">
-                <img src="/logo.png" alt="Africa of Hope Inc" className="w-full h-full object-contain" />
-              </div>
-              <div>
-                <div className="text-white font-black text-sm sm:text-base leading-none tracking-tight">
-                  AFRICA OF <span className="text-[#d4a017]">HOPE</span> <span className="text-[#d4a017]">INC</span>
-                </div>
-                <div className="text-[#d4a017]/70 text-[9px] sm:text-[10px] tracking-widest uppercase">Arms &amp; Service</div>
+            <Link href="/" className="flex items-center group flex-shrink-0">
+              <div className="bg-white rounded-xl px-2.5 sm:px-3.5 py-1.5 sm:py-2 shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all duration-200 flex-shrink-0">
+                <img
+                  src="/logo-full.png"
+                  alt="Africa of Hope Inc"
+                  className="h-7 sm:h-9 w-auto object-contain"
+                />
               </div>
             </Link>
 
@@ -176,11 +174,9 @@ export default function Navbar() {
       >
         {/* Drawer header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="AOH" className="w-9 h-9 rounded-full object-contain bg-white p-0.5" />
-            <div>
-              <p className="text-white font-black text-sm leading-tight">Africa of Hope</p>
-              <p className="text-[#d4a017] text-[10px] tracking-widest uppercase">Arms & Service</p>
+          <div className="flex items-center">
+            <div className="bg-white rounded-xl px-3 py-1.5">
+              <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-8 w-auto object-contain" />
             </div>
           </div>
           <button

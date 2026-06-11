@@ -392,6 +392,27 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Logo Separator */}
+      <div className="bg-gradient-to-r from-[#071f0d] via-[#1a6b2a] to-[#071f0d] py-10 sm:py-14">
+        <div className="max-w-4xl mx-auto px-4 flex flex-col items-center">
+          <div className="flex items-center w-full gap-4 mb-5">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[#d4a017]/50 to-[#d4a017]/80" />
+            <div className="bg-white rounded-2xl px-6 sm:px-8 py-4 sm:py-5 shadow-2xl ring-4 ring-[#d4a017]/20 flex-shrink-0">
+              <img
+                src="/logo-full.png"
+                alt="Africa of Hope Inc"
+                className="h-14 sm:h-20 w-auto object-contain"
+              />
+            </div>
+            <div className="flex-1 h-px bg-gradient-to-l from-transparent via-[#d4a017]/50 to-[#d4a017]/80" />
+          </div>
+          <p className="text-[#d4a017] text-xs sm:text-sm font-bold tracking-[0.25em] uppercase text-center">
+            Educate &nbsp;·&nbsp; Heal &nbsp;·&nbsp; Empower
+          </p>
+          <p className="text-white/40 text-xs tracking-widest uppercase mt-1 text-center">Africa of Hope Inc — Arms & Service</p>
+        </div>
+      </div>
+
       {/* Newsletter */}
       <NewsletterSection />
 

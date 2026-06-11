@@ -41,16 +41,11 @@ export default function Footer() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
           {/* Brand */}
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-white overflow-hidden flex items-center justify-center flex-shrink-0">
-                <img src="/logo.png" alt="Africa of Hope Inc" className="w-full h-full object-contain" />
+            <div className="mb-5">
+              <div className="bg-white rounded-xl px-4 py-3 inline-block shadow-lg">
+                <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-12 w-auto object-contain" />
               </div>
-              <div>
-                <div className="text-white font-black text-base leading-none">
-                  AFRICA OF <span className="text-[#d4a017]">HOPE INC</span>
-                </div>
-                <div className="text-[#d4a017]/70 text-[10px] tracking-widest uppercase">Arms &amp; Service</div>
-              </div>
+              <p className="text-[#d4a017]/70 text-[10px] tracking-widest uppercase mt-2 font-semibold">Arms &amp; Service · Est. Liberia</p>
             </div>
             <p className="text-white/60 text-sm leading-relaxed mb-5">
               A nonprofit organization dedicated to transforming lives across Africa through charity, education, healthcare, media, and advocacy. Headquartered in Liberia — serving Africa globally.

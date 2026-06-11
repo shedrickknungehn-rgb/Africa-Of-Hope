@@ -99,7 +99,9 @@ function PodcasterPortal() {
       <div className="flex flex-col rounded-2xl overflow-hidden bg-[#0a2812] border border-white/10" style={{ height: 600 }}>
         <div className="flex items-center justify-between px-4 py-3 bg-[#0d3d1a] border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="AOH" className="w-8 h-8 object-contain" />
+            <div className="bg-white rounded-lg px-2 py-1">
+              <img src="/logo-full.png" alt="AOH" className="h-6 w-auto object-contain" />
+            </div>
             <div>
               <p className="text-white font-black text-sm">Africa of Hope Inc — Podcast Studio</p>
               <p className="text-[#d4a017] text-xs">Room: {roomName} · Host: {podcaster.name}</p>
