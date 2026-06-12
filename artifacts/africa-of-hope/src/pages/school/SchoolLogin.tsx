@@ -104,7 +104,7 @@ export default function SchoolLogin() {
           {/* Header */}
           <div className="text-center mb-6">
             <div className="mb-4">
-              <img src="/school-logo.png" alt="Africa of Hope Inc" className="h-28 sm:h-36 w-auto object-contain mx-auto" />
+              <img src="/navbarlogo.png" alt="Africa of Hope Inc" className="h-28 sm:h-36 w-auto object-contain mx-auto" />
             </div>
             <p className="text-[#d4a017] font-bold text-sm tracking-widest uppercase mt-1">School PORTAL</p>
             <p className="text-white/40 text-xs mt-1 text-center">RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia</p>
