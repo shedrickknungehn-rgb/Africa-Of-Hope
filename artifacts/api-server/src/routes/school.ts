@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { query } from "../lib/db";
+import { getSupabase } from "../lib/db";
 import { signToken, verifyToken, type JwtPayload } from "../lib/jwt";
 
 const router = Router();
@@ -40,7 +40,7 @@ interface DbUser {
   name: string;
   email: string;
   role: string;
-  created_at: Date;
+  created_at: string;
 }
 
 interface DbCourse {
@@ -54,7 +54,7 @@ interface DbCourse {
   students: string[];
   materials: { title: string; url: string }[];
   status: string;
-  created_at: Date;
+  created_at: string;
 }
 
 interface DbSession {
@@ -64,7 +64,7 @@ interface DbSession {
   instructor_id: string;
   room_id: string;
   title: string;
-  started_at: Date;
+  started_at: string;
   status: string;
 }
 
@@ -76,7 +76,7 @@ function formatUser(u: DbUser, includePassword = true) {
     name: u.name,
     email: u.email,
     role: u.role,
-    createdAt: u.created_at.toISOString(),
+    createdAt: u.created_at,
   };
 }
 
@@ -92,7 +92,7 @@ function formatCourse(c: DbCourse) {
     students: Array.isArray(c.students) ? c.students : [],
     materials: Array.isArray(c.materials) ? c.materials : [],
     status: c.status,
-    createdAt: c.created_at.toISOString(),
+    createdAt: c.created_at,
   };
 }
 
@@ -104,7 +104,7 @@ function formatSession(s: DbSession) {
     instructorId: s.instructor_id,
     roomId: s.room_id,
     title: s.title,
-    startedAt: s.started_at.toISOString(),
+    startedAt: s.started_at,
     status: s.status,
   };
 }
@@ -117,34 +117,41 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     res.status(400).json({ error: "Username and password required" });
     return;
   }
-  const result = await query<DbUser>(
-    "SELECT * FROM school_users WHERE username = $1 LIMIT 1",
-    [username.trim()]
-  );
-  const user = result.rows[0];
-  if (!user || user.password !== password) {
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("school_users")
+    .select("*")
+    .eq("username", username.trim())
+    .limit(1)
+    .single();
+
+  if (error || !data || (data as DbUser).password !== password) {
     res.status(401).json({ error: "Invalid username or password" });
     return;
   }
+  const user = data as DbUser;
   const token = signToken({ id: user.id, username: user.username, name: user.name, email: user.email, role: user.role });
   res.json({ token, user: formatUser(user) });
 });
 
 router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
-  const result = await query<DbUser>("SELECT * FROM school_users WHERE id = $1 LIMIT 1", [req.user!.id]);
-  const user = result.rows[0];
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  res.json(formatUser(user));
+  const db = getSupabase();
+  const { data, error } = await db.from("school_users").select("*").eq("id", req.user!.id).single();
+  if (error || !data) { res.status(404).json({ error: "User not found" }); return; }
+  res.json(formatUser(data as DbUser));
 });
 
 /* ─── Users ─────────────────────────────────────────────────── */
 
 router.get("/users", requireAuth, async (req: AuthRequest, res: Response) => {
-  const result = await query<DbUser>("SELECT * FROM school_users ORDER BY id ASC");
+  const db = getSupabase();
+  const { data, error } = await db.from("school_users").select("*").order("id", { ascending: true });
+  if (error) throw error;
+  const users = (data ?? []) as DbUser[];
   if (req.user!.role === "admin") {
-    res.json(result.rows.map((u) => formatUser(u, true)));
+    res.json(users.map((u) => formatUser(u, true)));
   } else {
-    res.json(result.rows.filter((u) => u.role === "student").map((u) => formatUser(u, false)));
+    res.json(users.filter((u) => u.role === "student").map((u) => formatUser(u, false)));
   }
 });
 
@@ -154,73 +161,109 @@ router.post("/users", requireAuth, requireAdmin, async (req: Request, res: Respo
     res.status(400).json({ error: "Username, password, and name are required" });
     return;
   }
-  try {
-    const result = await query<DbUser>(
-      `INSERT INTO school_users (username, password, name, email, role)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [username.trim(), password, name, email || "", role || "student"]
-    );
-    res.status(201).json(formatUser(result.rows[0]));
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "";
-    if (msg.includes("unique") || msg.includes("duplicate") || msg.includes("23505")) {
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("school_users")
+    .insert({ username: username.trim(), password, name, email: email || "", role: role || "student" })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === "23505" || error.message?.includes("unique")) {
       res.status(409).json({ error: "Username already exists" });
     } else {
-      throw err;
+      throw error;
     }
+    return;
   }
+  res.status(201).json(formatUser(data as DbUser));
 });
 
 router.delete("/users/:id", requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
   const id = Number(req.params["id"]);
   if (id === req.user!.id) { res.status(400).json({ error: "Cannot delete your own account" }); return; }
-  await query("DELETE FROM school_users WHERE id = $1", [id]);
+  const db = getSupabase();
+  const { error } = await db.from("school_users").delete().eq("id", id);
+  if (error) throw error;
   res.status(204).send();
 });
 
 /* ─── Courses ────────────────────────────────────────────────── */
 
 router.get("/courses", requireAuth, async (_req: Request, res: Response) => {
-  const result = await query<DbCourse>("SELECT * FROM school_courses ORDER BY created_at ASC");
-  res.json(result.rows.map(formatCourse));
+  const db = getSupabase();
+  const { data, error } = await db.from("school_courses").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  res.json(((data ?? []) as DbCourse[]).map(formatCourse));
 });
 
 router.post("/courses", requireAuth, async (req: Request, res: Response) => {
   const { title, description, instructorId, duration, fee, schedule, status } = req.body as Record<string, string>;
   if (!title) { res.status(400).json({ error: "Title is required" }); return; }
-  const result = await query<DbCourse>(
-    `INSERT INTO school_courses (id, title, description, instructor_id, duration, fee, schedule, students, materials, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10) RETURNING *`,
-    [genId(), title, description || "", instructorId || "", duration || "1 month", fee || "", schedule || "", "[]", "[]", status || "active"]
-  );
-  res.status(201).json(formatCourse(result.rows[0]));
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("school_courses")
+    .insert({
+      id: genId(), title,
+      description: description || "",
+      instructor_id: instructorId || "",
+      duration: duration || "1 month",
+      fee: fee || "",
+      schedule: schedule || "",
+      students: [],
+      materials: [],
+      status: status || "active",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  res.status(201).json(formatCourse(data as DbCourse));
 });
 
 router.delete("/courses/:id", requireAuth, async (req: Request, res: Response) => {
-  await query("DELETE FROM school_courses WHERE id = $1", [String(req.params["id"])]);
+  const db = getSupabase();
+  const { error } = await db.from("school_courses").delete().eq("id", String(req.params["id"]));
+  if (error) throw error;
   res.status(204).send();
 });
 
 /* ─── Sessions ───────────────────────────────────────────────── */
 
 router.get("/sessions", requireAuth, async (_req: Request, res: Response) => {
-  const result = await query<DbSession>("SELECT * FROM school_sessions ORDER BY started_at ASC");
-  res.json(result.rows.map(formatSession));
+  const db = getSupabase();
+  const { data, error } = await db.from("school_sessions").select("*").order("started_at", { ascending: true });
+  if (error) throw error;
+  res.json(((data ?? []) as DbSession[]).map(formatSession));
 });
 
 router.post("/sessions", requireAuth, async (req: Request, res: Response) => {
   const { courseId, courseTitle, instructorId, roomId, title } = req.body as Record<string, string>;
   const id = genId();
-  const result = await query<DbSession>(
-    `INSERT INTO school_sessions (id, course_id, course_title, instructor_id, room_id, title, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'live') RETURNING *`,
-    [id, courseId || "", courseTitle || "", instructorId || "", roomId || id, title || "Live Class"]
-  );
-  res.status(201).json(formatSession(result.rows[0]));
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("school_sessions")
+    .insert({
+      id,
+      course_id: courseId || "",
+      course_title: courseTitle || "",
+      instructor_id: instructorId || "",
+      room_id: roomId || id,
+      title: title || "Live Class",
+      status: "live",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  res.status(201).json(formatSession(data as DbSession));
 });
 
 router.patch("/sessions/:id/end", requireAuth, async (req: Request, res: Response) => {
-  await query("UPDATE school_sessions SET status = 'ended' WHERE id = $1", [String(req.params["id"])]);
+  const db = getSupabase();
+  const { error } = await db
+    .from("school_sessions")
+    .update({ status: "ended" })
+    .eq("id", String(req.params["id"]));
+  if (error) throw error;
   res.status(204).send();
 });
 

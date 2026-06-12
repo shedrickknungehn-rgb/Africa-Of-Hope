@@ -11,15 +11,15 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 - All school API calls in `src/pages/school/schoolApi.ts`
 - `vercel.json` — SPA rewrite rule for client-side routing
 - `vite.config.ts` — no PORT/BASE_PATH hard requirement; falls back to 3000
+- Brochure image at `public/brochure.png`; `Education.tsx` references as `/brochure.png` (public URL, NOT `@assets` import)
 
-### Backend (Node.js/Express → connects to Supabase PostgreSQL)
+### Backend (Node.js/Express → Supabase)
 - `artifacts/api-server` — standalone Express server
-- DB: raw `pg` Pool connecting to Supabase via `DATABASE_URL` env var
-- DB layer: `src/lib/db.ts` — `query()` helper using pg Pool
-- Routes: `src/routes/school.ts` — all endpoints using raw SQL
+- DB: `@supabase/supabase-js` with service_role key via `getSupabase()` lazy singleton
+- **Critical:** `getSupabase()` throws at call-time (not module-load) if env vars missing — server starts fine in dev without credentials
+- Routes: `src/routes/school.ts` — call `getSupabase()` inside each handler
 - CORS: `ALLOWED_ORIGINS` env var (comma-separated list)
 - JWT: `SESSION_SECRET` env var, 7-day expiry
-- No workspace DB dependencies — fully standalone
 
 ### Supabase Schema Files
 - `supabase/migrations/001_initial_schema.sql` — tables, indexes, triggers, enums
@@ -53,10 +53,15 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 
 ## Env Variables Required
 ### Backend
-- `DATABASE_URL` — Supabase transaction pooler connection string
+- `SUPABASE_URL` — Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` — service role key (bypasses RLS)
 - `SESSION_SECRET` — JWT signing secret
 - `ALLOWED_ORIGINS` — comma-separated CORS origins
 - `PORT` — server port (default 4000)
 
 ### Frontend
 - `VITE_API_URL` — backend URL (no trailing slash)
+
+## Branding
+- Public site: primary `#F03800` / `#2492FF`
+- School portal: `#0d3d1a` dark green + `#d4a017` gold

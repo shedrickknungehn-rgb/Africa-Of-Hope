@@ -1,36 +1,55 @@
-import { query } from "./db";
+import { getSupabase } from "./db";
 import { logger } from "./logger";
 
 export async function seedSchoolData() {
-  const existing = await query(
-    "SELECT id FROM school_users WHERE username = 'admin' LIMIT 1"
-  );
-  if (existing.rows.length > 0) return;
+  const db = getSupabase();
+
+  const { data } = await db
+    .from("school_users")
+    .select("id")
+    .eq("username", "admin")
+    .limit(1);
+
+  if (data && data.length > 0) return;
 
   logger.info("Seeding default school data…");
 
-  await query(`
-    INSERT INTO school_users (username, password, name, email, role) VALUES
-      ('admin',       'AfroAdmin2026',  'System Administrator', 'admin@africaofhope.org',      'admin'),
-      ('instructor1', 'Instructor2026', 'Demo Instructor',      'instructor@africaofhope.org', 'instructor'),
-      ('assistant1',  'Assistant2026',  'Demo Assistant',       'assistant@africaofhope.org',  'assistant'),
-      ('student1',    'Student2026',    'Demo Student',         'student@africaofhope.org',    'student')
-  `);
+  await db.from("school_users").insert([
+    { username: "admin",       password: "AfroAdmin2026",  name: "System Administrator", email: "admin@africaofhope.org",      role: "admin" },
+    { username: "instructor1", password: "Instructor2026", name: "Demo Instructor",      email: "instructor@africaofhope.org", role: "instructor" },
+    { username: "assistant1",  password: "Assistant2026",  name: "Demo Assistant",       email: "assistant@africaofhope.org",  role: "assistant" },
+    { username: "student1",    password: "Student2026",    name: "Demo Student",         email: "student@africaofhope.org",    role: "student" },
+  ]);
 
-  await query(`
-    INSERT INTO school_courses (id, title, description, instructor_id, duration, fee, schedule, students, materials, status)
-    VALUES
-      ('c1', 'Certificate in Computer Studies',
-       'Comprehensive introduction to computers, Microsoft Office, and internet skills for beginners.',
-       '2', '3 months', '$35 registration', 'Monday, Wednesday, Friday — 9:00 AM',
-       '["4"]', '[{"title":"Module 1 — Computer Basics","url":"#"},{"title":"Module 2 — Microsoft Office Suite","url":"#"}]',
-       'active'),
-      ('c2', 'Diploma in Business Administration',
-       'Six-month diploma covering accounting, marketing, project management, and entrepreneurship.',
-       '2', '6 months', '$50 registration', 'Tuesday, Thursday — 10:00 AM',
-       '[]', '[{"title":"Course Outline","url":"#"}]',
-       'active')
-  `);
+  await db.from("school_courses").insert([
+    {
+      id: "c1",
+      title: "Certificate in Computer Studies",
+      description: "Comprehensive introduction to computers, Microsoft Office, and internet skills for beginners.",
+      instructor_id: "2",
+      duration: "3 months",
+      fee: "$35 registration",
+      schedule: "Monday, Wednesday, Friday — 9:00 AM",
+      students: ["4"],
+      materials: [
+        { title: "Module 1 — Computer Basics", url: "#" },
+        { title: "Module 2 — Microsoft Office Suite", url: "#" },
+      ],
+      status: "active",
+    },
+    {
+      id: "c2",
+      title: "Diploma in Business Administration",
+      description: "Six-month diploma covering accounting, marketing, project management, and entrepreneurship.",
+      instructor_id: "2",
+      duration: "6 months",
+      fee: "$50 registration",
+      schedule: "Tuesday, Thursday — 10:00 AM",
+      students: [],
+      materials: [{ title: "Course Outline", url: "#" }],
+      status: "active",
+    },
+  ]);
 
   logger.info("School data seeded successfully");
 }

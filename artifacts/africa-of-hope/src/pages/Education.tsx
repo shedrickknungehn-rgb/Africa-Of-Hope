@@ -1,6 +1,6 @@
 import { BookOpen, GraduationCap, School, Laptop, Heart, ArrowRight, CheckCircle, Phone, Mail, MapPin, Clock } from "lucide-react";
 import { openDonate } from "@/lib/donate";
-import brochureImg from "@assets/Blue_and_Yellow_Modern_Business_Trifold_Brochure_20260310_1907_1775497656493.png";
+const brochureImg = "/brochure.png";
 
 const programs = [
   {

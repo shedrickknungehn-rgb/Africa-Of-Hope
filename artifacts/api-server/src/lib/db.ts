@@ -1,27 +1,27 @@
-import pg from "pg";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const { Pool } = pg;
+let _client: SupabaseClient | null = null;
 
-if (!process.env["DATABASE_URL"]) {
-  throw new Error("DATABASE_URL environment variable is required");
-}
+export function getSupabase(): SupabaseClient {
+  if (_client) return _client;
 
-export const pool = new Pool({
-  connectionString: process.env["DATABASE_URL"],
-  ssl: process.env["NODE_ENV"] === "production" ? { rejectUnauthorized: false } : false,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
+  const url = process.env["SUPABASE_URL"];
+  const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];
 
-export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
-  sql: string,
-  params?: unknown[]
-): Promise<pg.QueryResult<T>> {
-  const client = await pool.connect();
-  try {
-    return await client.query<T>(sql, params);
-  } finally {
-    client.release();
+  if (!url || !key) {
+    throw new Error(
+      "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables."
+    );
   }
+
+  _client = createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  return _client;
 }
+
+export { getSupabase as supabase };

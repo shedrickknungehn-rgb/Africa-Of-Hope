@@ -3,12 +3,15 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+const isReplit = process.env.REPL_ID !== undefined;
+const isDev = process.env.NODE_ENV !== "production";
+
 export default defineConfig({
   base: "/",
   plugins: [
     react(),
     tailwindcss(),
-    ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined
+    ...(isDev && isReplit
       ? [
           await import("@replit/vite-plugin-runtime-error-modal").then((m) => m.default()),
           await import("@replit/vite-plugin-cartographer").then((m) =>
@@ -21,7 +24,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      "@assets": path.resolve(import.meta.dirname, "public"),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -29,14 +32,22 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          router: ["wouter"],
+          motion: ["framer-motion"],
+        },
+      },
+    },
   },
   server: {
     port: Number(process.env.PORT) || 3000,
     host: "0.0.0.0",
     allowedHosts: true,
     fs: {
-      strict: true,
-      deny: ["**/.*"],
+      strict: false,
     },
   },
   preview: {
