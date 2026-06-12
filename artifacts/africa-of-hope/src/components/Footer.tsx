@@ -42,8 +42,8 @@ export default function Footer() {
           {/* Brand */}
           <div>
             <div className="mb-5">
-              <div className="bg-white rounded-xl px-4 py-3 inline-block shadow-lg">
-                <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-12 w-auto object-contain" />
+              <div className="inline-block">
+                <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-18 w-auto object-contain" />
               </div>
               <p className="text-[#d4a017]/70 text-[10px] tracking-widest uppercase mt-2 font-semibold">Arms &amp; Service · Est. Liberia</p>
             </div>

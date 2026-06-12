@@ -68,13 +68,11 @@ export default function Navbar() {
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center group flex-shrink-0">
-              <div className="bg-white rounded-xl px-2.5 sm:px-3.5 py-1.5 sm:py-2 shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all duration-200 flex-shrink-0">
-                <img
-                  src="/logo-full.png"
-                  alt="Africa of Hope Inc"
-                  className="h-7 sm:h-9 w-auto object-contain"
-                />
-              </div>
+              <img
+                src="/logo-full.png"
+                alt="Africa of Hope Inc"
+                className="h-10 sm:h-13 w-auto object-contain group-hover:scale-105 transition-transform duration-200"
+              />
             </Link>
 
             {/* Desktop Nav — xl+ */}
