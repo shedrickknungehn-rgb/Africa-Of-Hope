@@ -1,1 +1,1 @@
-- [Africa of Hope school backend](aoh-school-backend.md) — school system uses JWT auth via /api/school; DB seeded on startup; password stored plaintext for admin-view feature.
+- [Africa of Hope architecture](aoh-school-backend.md) — Vite+React→Vercel, Express+pg→Supabase; schema in supabase/migrations/; VITE_API_URL + DATABASE_URL env vars required.

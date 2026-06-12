@@ -30,12 +30,10 @@ function AppRoutes() {
     <>
       {!isSchool && <Navbar />}
       <Switch>
-        {/* School portal — full-screen, no Navbar/Footer/FABs */}
         <Route path="/school" component={SchoolLogin} />
         <Route path="/school/dashboard" component={SchoolDashboard} />
         <Route path="/school/class/:id" component={LiveClass} />
 
-        {/* Main website */}
         <Route path="/" component={Home} />
         <Route path="/about" component={About} />
         <Route path="/charity" component={Charity} />
@@ -58,7 +56,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <WouterRouter base="/">
           <div className="flex flex-col min-h-screen">
             <AppRoutes />
           </div>

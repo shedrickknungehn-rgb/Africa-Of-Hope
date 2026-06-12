@@ -1,33 +1,32 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { Mic, MicOff, Video, VideoOff, Monitor, Users, MessageSquare, X, Phone } from "lucide-react";
-import { getSession, getCourses } from "./schoolData";
+import { Video, Phone } from "lucide-react";
+import { getSession, apiGetCourses, type Course } from "./schoolApi";
 
 export default function LiveClass() {
   const [location, navigate] = useLocation();
-  const [session, setSession] = useState(getSession());
+  const [session, setSession] = useState(getSession);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [joined, setJoined] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [videoOff, setVideoOff] = useState(false);
 
   const roomId = location.split("/class/")[1] || "AfricaOfHope-General";
-  const courses = getCourses();
-  const course = courses.find((c) => c.id === roomId);
 
   useEffect(() => {
     const s = getSession();
     if (!s) { navigate("/school"); return; }
     setSession(s);
+    apiGetCourses().then(setCourses).catch(() => {});
   }, [navigate]);
 
   if (!session) return null;
+
+  const course = courses.find((c) => c.id === roomId);
 
   const jitsiRoom = `AfricaOfHopeSchool-${roomId}`.replace(/[^a-zA-Z0-9-]/g, "-");
   const jitsiUrl = `https://meet.jit.si/${jitsiRoom}#userInfo.displayName="${encodeURIComponent(session.user.name)}"&config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.toolbarButtons=["microphone","camera","desktop","fullscreen","folio","hangup","chat","recording","etherpad","whiteboard","breakoutRooms","participants-pane","raisehand","videoquality","filmstrip","feedback","stats","shortcuts","tileview","select-background","help"]`;
 
   return (
     <div className="h-screen flex flex-col bg-[#0a2812]">
-      {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-[#0d3d1a] border-b border-white/10 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="bg-white rounded-lg px-2 py-1">
@@ -45,7 +44,7 @@ export default function LiveClass() {
             <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
             <span className="text-red-300 text-xs font-bold uppercase tracking-wide">Live</span>
           </div>
-          <span className="text-white/60 text-xs">{session.user.name} ({session.user.role})</span>
+          <span className="text-white/60 text-xs hidden sm:block">{session.user.name} ({session.user.role})</span>
           <button
             onClick={() => navigate("/school/dashboard")}
             className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
@@ -56,7 +55,6 @@ export default function LiveClass() {
         </div>
       </div>
 
-      {/* Join prompt or Jitsi */}
       {!joined ? (
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-10 text-center max-w-md w-full shadow-2xl">
@@ -77,7 +75,7 @@ export default function LiveClass() {
             </div>
             <button
               onClick={() => setJoined(true)}
-              className="w-full bg-[#1a6b2a] hover:bg-[#155a22] text-white font-black py-4 rounded-xl transition-all hover:scale-[1.01] text-base"
+              className="w-full bg-[#1a6b2a] hover:bg-[#155a22] text-white font-black py-4 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] text-base"
             >
               Join Live Class
             </button>

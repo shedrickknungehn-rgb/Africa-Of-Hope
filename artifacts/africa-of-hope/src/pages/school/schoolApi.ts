@@ -1,4 +1,5 @@
-const API = "/api/school";
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const API = `${API_BASE}/api/school`;
 
 export type Role = "admin" | "instructor" | "assistant" | "student";
 
