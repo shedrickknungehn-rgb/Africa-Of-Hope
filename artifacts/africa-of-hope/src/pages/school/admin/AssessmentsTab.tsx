@@ -229,17 +229,26 @@ export default function AssessmentsTab({ courses, users, currentUser }: { course
                           <th className="text-left pb-2">Student</th>
                           <th className="text-left pb-2">Score</th>
                           <th className="text-left pb-2">%</th>
+                          <th className="text-left pb-2">Short Answers</th>
                           <th className="text-left pb-2">Submitted</th>
                         </tr></thead>
                         <tbody>
                           {submissions.map((s) => {
                             const pct = s.maxScore > 0 ? Math.round((s.score / s.maxScore) * 100) : 0;
+                            const shortAns = quiz.questions
+                              .filter((qq: QuizQuestion) => qq.type === "short_answer")
+                              .map((qq: QuizQuestion) => ({ q: qq.text, a: s.answers[qq.id] || "—" }));
                             return (
-                              <tr key={s.id} className="border-t border-gray-200">
+                              <tr key={s.id} className="border-t border-gray-200 align-top">
                                 <td className="py-2 font-bold text-[#0f0f0f]">{s.studentName || s.studentId}</td>
                                 <td className="py-2 font-mono">{s.score}/{s.maxScore}</td>
                                 <td className={`py-2 font-bold ${pct >= 70 ? "text-green-600" : pct >= 50 ? "text-amber-600" : "text-red-600"}`}>{pct}%</td>
-                                <td className="py-2 text-gray-400 text-xs">{new Date(s.submittedAt).toLocaleDateString()}</td>
+                                <td className="py-2 text-gray-500 text-xs max-w-xs">
+                                  {shortAns.length === 0 ? <span className="text-gray-300">—</span> : shortAns.map((sa: { q: string; a: string }, i: number) => (
+                                    <div key={i} className="mb-1"><span className="font-semibold text-gray-600">{sa.q}: </span>{sa.a}</div>
+                                  ))}
+                                </td>
+                                <td className="py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(s.submittedAt).toLocaleDateString()}</td>
                               </tr>
                             );
                           })}

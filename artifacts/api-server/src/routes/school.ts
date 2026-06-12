@@ -854,12 +854,15 @@ interface DbQuestion { id: string; type: string; text: string; options?: string[
 interface DbQuiz { id: string; course_id: string; title: string; instructions: string; due_date: string | null; time_limit_mins: number; status: string; questions: DbQuestion[]; created_by: string; created_at: string; }
 interface DbQuizSubmission { id: string; quiz_id: string; student_id: string; answers: Record<string, string>; score: number; max_score: number; submitted_at: string; created_at: string; }
 
-const fmtQuiz = (q: DbQuiz, cm: Map<string, { title: string; instructorId: string }>) => ({
+const fmtQuiz = (q: DbQuiz, cm: Map<string, { title: string; instructorId: string }>, stripAnswers = false) => ({
   id: q.id, courseId: q.course_id,
   courseTitle: cm.get(q.course_id)?.title || "",
   title: q.title, instructions: q.instructions,
   dueDate: q.due_date, timeLimitMins: q.time_limit_mins,
-  status: q.status, questions: q.questions,
+  status: q.status,
+  questions: stripAnswers
+    ? q.questions.map(({ correct: _c, ...rest }) => rest)
+    : q.questions,
   createdBy: q.created_by, createdAt: q.created_at,
 });
 
@@ -884,7 +887,8 @@ router.get("/quizzes", requireAuth, async (req: AuthRequest, res) => {
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   const cm = await buildCourseMap();
-  res.json(((data ?? []) as DbQuiz[]).map((quiz) => fmtQuiz(quiz, cm)));
+  const isStudent = !MGMT.has(role) && role !== "instructor" && role !== "assistant";
+  res.json(((data ?? []) as DbQuiz[]).map((quiz) => fmtQuiz(quiz, cm, isStudent)));
 });
 
 router.post("/quizzes", requireAuth, requireStaff, async (req: AuthRequest, res) => {
