@@ -264,7 +264,8 @@ export const apiUpdatePayroll = (id: string, updates: Partial<Payroll>) => apiFe
 
 /* ─── Timetable ──────────────────────────────────────────────── */
 export interface TimetableSlot {
-  id: string; courseId: string; courseTitle?: string; instructorName?: string;
+  id: string; courseId: string; courseTitle?: string;
+  instructorId?: string; instructorName?: string;
   dayOfWeek: string; period: string; room: string;
   startTime: string; endTime: string; createdAt: string;
 }

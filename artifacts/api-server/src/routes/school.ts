@@ -717,18 +717,36 @@ const buildCourseMap = async (): Promise<Map<string, { title: string; instructor
   return new Map<string, { title: string; instructorId: string }>((data ?? []).map((c: { id: string; title: string; instructor_id: string }) => [c.id, { title: c.title, instructorId: String(c.instructor_id) }]));
 };
 
-const fmtSlot = (s: DbTimetable, cm: Map<string, { title: string; instructorId: string }>, um: Map<string, string>) => ({
-  id: s.id, courseId: s.course_id,
-  courseTitle: cm.get(s.course_id)?.title || "",
-  instructorName: um.get(cm.get(s.course_id)?.instructorId || "") || "",
-  dayOfWeek: s.day_of_week, period: s.period, room: s.room,
-  startTime: s.start_time, endTime: s.end_time, createdAt: s.created_at,
-});
+const fmtSlot = (s: DbTimetable, cm: Map<string, { title: string; instructorId: string }>, um: Map<string, string>) => {
+  const instructorId = cm.get(s.course_id)?.instructorId || "";
+  return {
+    id: s.id, courseId: s.course_id,
+    courseTitle: cm.get(s.course_id)?.title || "",
+    instructorId,
+    instructorName: um.get(instructorId) || "",
+    dayOfWeek: s.day_of_week, period: s.period, room: s.room,
+    startTime: s.start_time, endTime: s.end_time, createdAt: s.created_at,
+  };
+};
+
+const getScheduleCourseIds = async (role: string, uid: string): Promise<string[] | null> => {
+  if (MGMT.has(role)) return null;
+  const db = getSupabase();
+  if (role === "instructor" || role === "assistant") {
+    const { data } = await db.from("school_courses").select("id").eq("instructor_id", uid);
+    return (data ?? []).map((c: { id: string }) => c.id);
+  }
+  const { data } = await db.from("school_enrollments").select("course_id").eq("student_id", uid).neq("status", "withdrawn");
+  return (data ?? []).map((e: { course_id: string }) => e.course_id);
+};
 
 router.get("/timetable", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
+  const allowedCourseIds = await getScheduleCourseIds(req.user!.role, String(req.user!.id));
+  if (allowedCourseIds !== null && allowedCourseIds.length === 0) { res.json([]); return; }
   let q = db.from("school_timetable").select("*");
   if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
+  if (allowedCourseIds !== null) q = q.in("course_id", allowedCourseIds);
   const { data, error } = await q.order("created_at", { ascending: true });
   if (error) throw error;
   const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
@@ -784,8 +802,11 @@ const fmtExam = (e: DbExam, cm: Map<string, { title: string; instructorId: strin
 
 router.get("/exams", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
+  const allowedCourseIds = await getScheduleCourseIds(req.user!.role, String(req.user!.id));
+  if (allowedCourseIds !== null && allowedCourseIds.length === 0) { res.json([]); return; }
   let q = db.from("school_exams").select("*");
   if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
+  if (allowedCourseIds !== null) q = q.in("course_id", allowedCourseIds);
   const { data, error } = await q.order("exam_date", { ascending: true });
   if (error) throw error;
   const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);

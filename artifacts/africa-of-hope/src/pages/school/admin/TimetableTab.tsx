@@ -20,17 +20,23 @@ function timeToMins(t: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-function hasConflict(slots: TimetableSlot[], excluding?: string): string[] {
+function hasConflict(slots: TimetableSlot[]): string[] {
   const conflicts: string[] = [];
-  const check = slots.filter((s) => s.id !== excluding && s.room);
-  for (let i = 0; i < check.length; i++) {
-    for (let j = i + 1; j < check.length; j++) {
-      const a = check[i], b = check[j];
-      if (a.room !== b.room || a.dayOfWeek !== b.dayOfWeek) continue;
+  for (let i = 0; i < slots.length; i++) {
+    for (let j = i + 1; j < slots.length; j++) {
+      const a = slots[i], b = slots[j];
+      if (a.dayOfWeek !== b.dayOfWeek) continue;
+
       const aStart = timeToMins(a.startTime), aEnd = timeToMins(a.endTime);
       const bStart = timeToMins(b.startTime), bEnd = timeToMins(b.endTime);
-      if (aStart === -1 || aEnd === -1 || bStart === -1 || bEnd === -1) continue;
-      if (aStart < bEnd && bStart < aEnd) {
+      const timesOverlap = aStart !== -1 && aEnd !== -1 && bStart !== -1 && bEnd !== -1 && aStart < bEnd && bStart < aEnd;
+      const samePeriod = !!(a.period && b.period && a.period === b.period);
+      if (!timesOverlap && !samePeriod) continue;
+
+      const roomConflict = !!(a.room && b.room && a.room === b.room);
+      const instructorConflict = !!(a.instructorId && b.instructorId && a.instructorId === b.instructorId && a.courseId !== b.courseId);
+
+      if (roomConflict || instructorConflict) {
         if (!conflicts.includes(a.id)) conflicts.push(a.id);
         if (!conflicts.includes(b.id)) conflicts.push(b.id);
       }
@@ -163,7 +169,7 @@ export default function TimetableTab({ courses, users }: { courses: Course[]; us
       {conflictIds.size > 0 && view === "timetable" && (
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-          <p className="text-amber-700 text-sm font-bold">Room conflict detected — {conflictIds.size} slot(s) share the same room at overlapping times.</p>
+          <p className="text-amber-700 text-sm font-bold">Scheduling conflict — {conflictIds.size} slot(s) have a room double-booking or instructor double-booking on the same day and period/time.</p>
         </div>
       )}
 
