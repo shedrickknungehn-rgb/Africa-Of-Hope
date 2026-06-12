@@ -74,6 +74,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@workspace/api-server": "workspace:*",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8"
   }

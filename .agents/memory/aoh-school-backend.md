@@ -5,16 +5,21 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 
 ## Architecture (Production-Ready)
 
-### Frontend (Vercel)
+### Deployment model: ONE Vercel project (Vercel + Supabase only)
+- The SPA AND the Express API deploy together to a single Vercel project; the API runs as a serverless function on the SAME origin (no separate API host).
+- `artifacts/africa-of-hope/api/[...path].ts` is the Vercel catch-all: it re-exports the Express `app` from `@workspace/api-server/app` (the prebuilt `dist/app.mjs`). `app.use("/api", router)` matches because Vercel passes the full `/api/...` path as req.url.
+- `vercel.json` buildCommand builds the api-server FIRST (`pnpm --filter @workspace/api-server build`) then the web; rewrite `/((?!api/|assets/).*)` sends everything except `/api` + assets to the SPA.
+- Frontend is same-origin by default: `API_BASE = (VITE_API_URL ?? "")` → `/api/school/...`. Do NOT set `VITE_API_URL` on Vercel. Local dev uses the Vite proxy (`/api` → `:8080`).
+- All school API calls in `src/pages/school/schoolApi.ts`.
+
+### Frontend
 - `artifacts/africa-of-hope` — Vite + React, base path `/`
-- API URL via `VITE_API_URL` env var → `import.meta.env.VITE_API_URL`
-- All school API calls in `src/pages/school/schoolApi.ts`
-- `vercel.json` — SPA rewrite rule for client-side routing
 - `vite.config.ts` — no PORT/BASE_PATH hard requirement; falls back to 3000
 - Brochure image at `public/brochure.png`; `Education.tsx` references as `/brochure.png` (public URL, NOT `@assets` import)
 
 ### Backend (Node.js/Express → Supabase)
-- `artifacts/api-server` — standalone Express server
+- `artifacts/api-server` — Express server. `src/app.ts` exports the bare `app` (CORS, json, `/health`, `app.use("/api", router)`, error handler); `src/index.ts` is the local-dev entry (app.listen + seedSchoolData). The Vercel function imports `app.ts` ONLY, so `seedSchoolData()` does NOT run on Vercel — seed data comes from migrations.
+- esbuild (`build.mjs`) bundles BOTH entries: `index.ts`→`dist/index.mjs` and `app.ts`→`dist/app.mjs` (ESM, CJS-interop banner so express works, `esbuild-plugin-pino` sidecars). pino transports load only in dev (NODE_ENV≠production); the serverless prod path is plain-stdout pino, so the bundle boots cleanly on Vercel.
 - DB: `@supabase/supabase-js` with service_role key via `getSupabase()` lazy singleton
 - **Critical:** `getSupabase()` throws at call-time (not module-load) if env vars missing — server starts fine in dev without credentials
 - Routes: `src/routes/school.ts` — call `getSupabase()` inside each handler
@@ -31,6 +36,7 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 - `supabase/migrations/009_remove_demo_data.sql` — one-time wipe of all school_* rows
 - `supabase/migrations/010_superadmin.sql` — seeds the one super_admin login
 - `supabase/migrations/011_demo_users.sql` — seeds demo logins (one per role, pw Demo2026)
+- `supabase/migrations/012_password_reset_codes.sql` — `password_reset_codes` table (forgot-password store) + service_role-only RLS
 - `supabase/README.md` — deployment guide
 - NOTE: the old `supabase/seed.sql` was DELETED (it re-added demo credentials, contradicting the clean-slate model; nothing runs it)
 
@@ -76,7 +82,7 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 **Why:** user explicitly asked for quick access "for now" and chose to have password-reset codes shown ON SCREEN (no email service is configured). These are accepted demo-phase tradeoffs to remove/harden before go-live — do NOT "fix" them unprompted.
 **How to apply:**
 - Remember-me: `storeSession(token,user,remember)` in schoolApi.ts → localStorage (persist) when checked, sessionStorage (clears on browser close) when unchecked, and it clears the other store. getToken/getSession read both stores; clearSession wipes both.
-- Forgot password (ALL users): `POST /auth/forgot-password {identifier}` resolves the user by username OR email and returns a 6-digit code IN THE RESPONSE BODY (that is how it reaches the user). `POST /auth/reset-password {identifier,code,newPassword}` checks an in-memory Map (10-min TTL, keyed by lowercased username) then updates the plaintext password. The frontend must pass the server-returned `username` (not the raw identifier) back into reset, since the key is the canonical username.
+- Forgot password (ALL users): `POST /auth/forgot-password {identifier}` resolves the user by username OR email and returns a 6-digit code IN THE RESPONSE BODY (that is how it reaches the user). `POST /auth/reset-password {identifier,code,newPassword}` validates against the `password_reset_codes` Supabase table (10-min TTL, PK = lowercased username) then updates the plaintext password and deletes the row. Stored in DB (not memory) because Vercel serverless is stateless. The frontend must pass the server-returned `username` (not the raw identifier) back into reset, since the key is the canonical username.
 - Demo logins: `DEMO_ACCOUNTS` in schoolApi.ts is the on-screen quick-login list and MUST stay in sync with `011_demo_users.sql` (+ superadmin from 010).
 - Pre-launch cleanup: drop the demo users, remove the demo panel + DEMO_ACCOUNTS, and replace on-screen OTP with real email delivery (and consider enforcing `is_active` in login/reset — currently ignored).
 
@@ -112,20 +118,21 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 - jsPDF used via dynamic import in ReportsTab; type-cast via `as unknown as { lastAutoTable: ... }`
 
 ## Env Variables Required
-### Backend
+### Vercel (server-side, for the /api function) — set in the Vercel project
 - `SUPABASE_URL` — Supabase project URL
 - `SUPABASE_SERVICE_ROLE_KEY` — service role key (bypasses RLS)
-- `SESSION_SECRET` — JWT signing secret
-- `ALLOWED_ORIGINS` — comma-separated CORS origins
-- `PORT` — server port (default 4000)
+- `SESSION_SECRET` — JWT signing secret. REQUIRED in production: `jwt.ts` throws on boot when NODE_ENV=production and it's unset (no insecure hardcoded fallback), so a missing value makes every `/api` call 500 while the SPA still renders.
+- Do NOT set `ALLOWED_ORIGINS` on Vercel (same origin → no CORS; a wrong value makes the cors callback throw). Still used for the separate-host/dev case (comma-separated).
+- `PORT` — local dev only (default 4000; Vite proxy targets :8080).
 
 ### Frontend
-- `VITE_API_URL` — backend URL (no trailing slash)
+- `VITE_API_URL` — leave EMPTY/unset for the Vercel deploy (same-origin). Only set it to point the SPA at a separately-hosted API.
 
-## Production login pitfall (Vercel) — root cause of "Unexpected end of JSON input"
-- Frontend (Vercel) and the Express API are SEPARATE hosts. If `VITE_API_URL` is unset/empty on Vercel, login POSTs to a relative `/api/...` on the Vercel domain (no backend) → empty body → `res.json()` throws "Unexpected end of JSON input".
-- **Why:** the Express backend was never deployed to a host reachable from Vercel.
-- **How to fix:** (a) deploy `artifacts/api-server` somewhere reachable (e.g. a Replit deployment → stable `.replit.app` URL), (b) set `VITE_API_URL` on Vercel to that URL and redeploy, (c) add the Vercel origin to `ALLOWED_ORIGINS` (CORS). `schoolApi.ts` now degrades to a clear "Unable to reach the school server" message instead of the raw JSON error.
+## Vercel deploy checklist & failure modes (single-project, API-as-function)
+- The old "deploy the Express API to a separate host + set VITE_API_URL" model is GONE — the API now ships as the Vercel serverless function `api/[...path].ts` on the same origin. Leave `VITE_API_URL` empty on Vercel.
+- **Vercel project settings:** Root Directory = `artifacts/africa-of-hope`, with "Include source files outside of Root Directory" ENABLED (so the pnpm workspace install + nft tracing of `../api-server/dist/app.mjs` work). The `@workspace/api-server` `workspace:*` dep fails install loudly if misconfigured — a useful early signal.
+- **Most likely "login broken" cause:** `SESSION_SECRET` (or the SUPABASE_* vars) not set in Vercel → the function 500s on cold start while the SPA still renders. Set all three server-side vars.
+- `schoolApi.ts` degrades to a clear "Unable to reach the school server" message instead of a raw JSON error when the API is unreachable.
 
 ## Branding
 - Public site: primary `#F03800` / `#2492FF`

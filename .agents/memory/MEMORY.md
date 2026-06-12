@@ -1,1 +1,1 @@
-- [Africa of Hope architecture](aoh-school-backend.md) — Vite+React→Vercel, Express+pg→Supabase; schema in supabase/migrations/; VITE_API_URL + DATABASE_URL env vars required.
+- [Africa of Hope architecture](aoh-school-backend.md) — Vite+React SPA + Express run on ONE Vercel project (API as a serverless function on the same origin, no VITE_API_URL); Supabase service-role; migrations in supabase/migrations/.
