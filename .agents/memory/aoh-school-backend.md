@@ -31,25 +31,36 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 - `supabase/README.md` — deployment guide
 
 ## DB Tables (Supabase PostgreSQL)
-- `school_users` — serial PK; passwords stored plaintext (intentional — admin-view feature)
-- `school_courses` — text PK; students/materials as JSONB arrays
-- `school_sessions` — text PK; status enum (live/ended/scheduled)
-- `contact_submissions` — uuid PK; contact form data
-- `donations` — uuid PK; donation tracking
-- `announcements` — uuid PK; with audience targeting + expiry
+- `school_users` — serial PK; passwords stored plaintext (intentional — admin-view feature); role is TEXT (not enum) after migration 006
+- `school_courses` — text PK; students/materials as JSONB arrays; status is TEXT after migration 006
+- `school_sessions` — text PK; status text (live/ended/scheduled)
+- `school_enrollments` — text PK; student_id TEXT (string of user INT id); status: pending/active/completed/withdrawn
+- `school_announcements` — text PK; priority text; target_roles JSONB array
+- `school_events` — text PK; type text (academic/social/administrative/external)
+- `school_payments` — text PK; status: pending/paid/overdue/waived
+- `contact_submissions`, `donations` — existing tables unchanged
+
+## 9 Roles (TEXT in DB — Phase 1 expanded from 4 to 9)
+Management → AdminDashboard: admin, super_admin, director, registrar, academic_coordinator, finance_officer, hr_officer
+Non-management: instructor, assistant → InstructorDashboard; student, alumni → StudentDashboard
 
 ## Auth Flow
 - POST `/api/school/auth/login` → `{token, user}` → localStorage
 - All endpoints: `Authorization: Bearer <token>`
-- Admin gets full user list including passwords; others get students only (no passwords)
+- Management roles get full user list + all CRUD; others get limited access
 
-## Default Credentials (seeded)
-- admin / AfroAdmin2026
-- instructor1 / Instructor2026
-- assistant1 / Assistant2026
-- student1 / Student2026
+## Demo Credentials (seeded by seed.ts)
+- admin / AfroAdmin2026, superadmin / SuperAdmin2026, director / Director2026
+- registrar / Registrar2026, coordinator / Coordinator2026, finance / Finance2026, hr / HR2026
+- instructor1 / Instructor2026, assistant1 / Assistant2026
+- student1 / Student2026, student2 / Student2026, alumni1 / Alumni2026
 
-**Why plaintext passwords:** AdminDashboard has "show password" feature for admins to share credentials. Internal school portal only.
+**Why plaintext passwords:** AdminDashboard Users tab has show/hide password for admins to share credentials. Internal portal only.
+
+## CRITICAL: Migration 006 must be run in Supabase before Phase 1 tables work
+File: `supabase/migrations/006_phase1_expansion.sql`
+Run in: Supabase Dashboard → SQL Editor → paste entire file → Run
+This converts role/status ENUMs to TEXT and creates enrollments/announcements/events/payments tables.
 
 ## Env Variables Required
 ### Backend

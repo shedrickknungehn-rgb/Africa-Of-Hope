@@ -1,0 +1,105 @@
+Important Architecture Requirements
+
+The institution already has a public website.
+
+Do NOT rebuild the public-facing website.
+
+Instead, build a secure internal management platform that integrates with the existing website.
+
+The existing website should be able to:
+
+* Display courses from the system
+* Display upcoming events
+* Display announcements
+* Accept online applications
+* Accept inquiries and contact forms
+* Verify certificates through QR codes
+* Allow students to access the portal through a login button
+
+The system should include:
+
+1. Admin Portal
+
+* Full management dashboard
+* User management
+* Course management
+* Enrollment management
+* Finance management
+* Reporting and analytics
+
+2. Student Portal
+
+* Course registration
+* Learning materials
+* Attendance
+* Assessments
+* Results
+* Certificates
+* Payment history
+
+3. Instructor Portal
+
+* Course delivery
+* Attendance management
+* Grading
+* Student communication
+* Resource uploads
+
+4. Finance Portal
+
+* Tuition tracking
+* Invoicing
+* Receipts
+* Financial reports
+
+5. Certificate Verification Portal
+
+* Public certificate verification page
+* QR code verification
+* Verification code lookup
+* Employer verification access
+
+6. API Layer
+   Create secure APIs so the existing website can retrieve:
+
+* Courses
+* Events
+* Announcements
+* Application forms
+* Certificate verification status
+
+7. Admissions Portal
+
+* Online applications
+* Application review
+* Acceptance workflow
+* Student onboarding
+
+8. Learning Management System
+
+* Course materials
+* Video lessons
+* Live classes
+* Assignments
+* Assessments
+
+9. Alumni & Career Portal
+
+* Job opportunities
+* Internship opportunities
+* Alumni directory
+* Employer partnerships
+
+10. Multi-Role Authentication
+
+* Super Admin
+* Director
+* Registrar
+* Academic Coordinator
+* Finance Officer
+* HR Officer
+* Instructor
+* Student
+* Alumni
+
+The system should function as a complete ERP + LMS + Student Information System while integrating seamlessly with the existing public website.
