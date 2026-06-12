@@ -34,6 +34,23 @@ export const ALL_ROLES: Role[] = [
   "finance_officer", "hr_officer", "instructor", "assistant", "student", "alumni", "parent",
 ];
 
+export interface DemoAccount { role: Role; username: string; password: string; name: string; }
+
+/* Convenience logins shown on the sign-in screen. These must stay in sync with
+   supabase/migrations/011_demo_users.sql (and 010 for the super admin). */
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  { role: "super_admin", username: "superadmin", password: "SuperAdmin2026", name: "Super Administrator" },
+  { role: "director", username: "director", password: "Demo2026", name: "Daniel Director" },
+  { role: "registrar", username: "registrar", password: "Demo2026", name: "Rita Registrar" },
+  { role: "academic_coordinator", username: "coordinator", password: "Demo2026", name: "Cora Coordinator" },
+  { role: "finance_officer", username: "finance", password: "Demo2026", name: "Felix Finance" },
+  { role: "hr_officer", username: "hr", password: "Demo2026", name: "Hana Human-Resource" },
+  { role: "instructor", username: "instructor", password: "Demo2026", name: "Ian Instructor" },
+  { role: "assistant", username: "assistant", password: "Demo2026", name: "Amy Assistant" },
+  { role: "student", username: "student", password: "Demo2026", name: "Sam Student" },
+  { role: "parent", username: "parent", password: "Demo2026", name: "Pat Parent" },
+];
+
 export interface User {
   id: string; username: string; password: string;
   name: string; email: string; phone?: string;
@@ -125,7 +142,19 @@ export interface ReportOverview {
   liveSessions: number; upcomingEvents: number; totalAnnouncements: number;
 }
 
-function getToken() { return localStorage.getItem("aoh_school_token"); }
+const TOKEN_KEY = "aoh_school_token";
+const USER_KEY = "aoh_school_user";
+
+function storeSession(token: string, user: User, remember: boolean) {
+  const primary = remember ? localStorage : sessionStorage;
+  const secondary = remember ? sessionStorage : localStorage;
+  primary.setItem(TOKEN_KEY, token);
+  primary.setItem(USER_KEY, JSON.stringify(user));
+  secondary.removeItem(TOKEN_KEY);
+  secondary.removeItem(USER_KEY);
+}
+
+function getToken() { return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY); }
 
 function authHeaders(): HeadersInit {
   const t = getToken();
@@ -151,15 +180,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 /* ─── Auth ─────────────────────────────────────────────────── */
-export async function apiLogin(username: string, password: string): Promise<{ token: string; user: User }> {
+export async function apiLogin(username: string, password: string, remember = true): Promise<{ token: string; user: User }> {
   let res: Response;
   try { res = await fetch(`${API}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) }); }
   catch { throw new Error(UNREACHABLE); }
   const data = await parseJson(res);
   if (!res.ok) throw new Error((data as { error?: string }).error || "Login failed");
   if (!data["token"]) throw new Error("Login failed — the server returned an invalid response.");
-  localStorage.setItem("aoh_school_token", data["token"] as string);
-  localStorage.setItem("aoh_school_user", JSON.stringify(data["user"]));
+  storeSession(data["token"] as string, data["user"] as User, remember);
   return data as unknown as { token: string; user: User };
 }
 
@@ -179,21 +207,39 @@ export async function apiSetup(payload: { name: string; username: string; email:
   const data = await parseJson(res);
   if (!res.ok) throw new Error((data as { error?: string }).error || "Setup failed");
   if (!data["token"]) throw new Error("Setup failed — the server returned an invalid response.");
-  localStorage.setItem("aoh_school_token", data["token"] as string);
-  localStorage.setItem("aoh_school_user", JSON.stringify(data["user"]));
+  storeSession(data["token"] as string, data["user"] as User, true);
   return data as unknown as { token: string; user: User };
 }
 
 export function getSession(): { user: User } | null {
-  const token = localStorage.getItem("aoh_school_token");
-  const raw = localStorage.getItem("aoh_school_user");
+  const token = localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
+  const raw = localStorage.getItem(USER_KEY) ?? sessionStorage.getItem(USER_KEY);
   if (!token || !raw) return null;
   try { return { user: JSON.parse(raw) as User }; } catch { return null; }
 }
 
 export function clearSession() {
-  localStorage.removeItem("aoh_school_token");
-  localStorage.removeItem("aoh_school_user");
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
+}
+
+export async function apiForgotPassword(identifier: string): Promise<{ username: string; name: string; code: string }> {
+  let res: Response;
+  try { res = await fetch(`${API}/auth/forgot-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier }) }); }
+  catch { throw new Error(UNREACHABLE); }
+  const data = await parseJson(res);
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Could not start password reset");
+  return data as unknown as { username: string; name: string; code: string };
+}
+
+export async function apiResetPassword(identifier: string, code: string, newPassword: string): Promise<void> {
+  let res: Response;
+  try { res = await fetch(`${API}/auth/reset-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier, code, newPassword }) }); }
+  catch { throw new Error(UNREACHABLE); }
+  const data = await parseJson(res);
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Could not reset your password");
 }
 
 /* ─── Users ─────────────────────────────────────────────────── */

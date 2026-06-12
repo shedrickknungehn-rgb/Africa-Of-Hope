@@ -27,8 +27,12 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 - `supabase/migrations/003_realtime.sql` — realtime on school_sessions + announcements
 - `supabase/migrations/004_storage.sql` — 3 buckets (course-materials, media-gallery, avatars)
 - `supabase/migrations/005_functions.sql` — get_school_stats, enroll_student, cleanup
-- `supabase/seed.sql` — default users + courses + welcome announcement
+- `supabase/migrations/006..008` — phase 1/2/3 schema + table expansions
+- `supabase/migrations/009_remove_demo_data.sql` — one-time wipe of all school_* rows
+- `supabase/migrations/010_superadmin.sql` — seeds the one super_admin login
+- `supabase/migrations/011_demo_users.sql` — seeds demo logins (one per role, pw Demo2026)
 - `supabase/README.md` — deployment guide
+- NOTE: the old `supabase/seed.sql` was DELETED (it re-added demo credentials, contradicting the clean-slate model; nothing runs it)
 
 ## DB Tables (Supabase PostgreSQL)
 - `school_users` — serial PK; passwords stored plaintext (intentional — admin-view feature); role is TEXT (not enum) after migration 006
@@ -68,12 +72,20 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 
 **Why plaintext passwords in DB:** AdminDashboard Users tab has show/hide password for admins to share credentials with enrolled students. Internal portal only.
 
+## Login UX: remember-me, on-screen OTP reset, demo logins (INTENTIONAL temp relaxation)
+**Why:** user explicitly asked for quick access "for now" and chose to have password-reset codes shown ON SCREEN (no email service is configured). These are accepted demo-phase tradeoffs to remove/harden before go-live — do NOT "fix" them unprompted.
+**How to apply:**
+- Remember-me: `storeSession(token,user,remember)` in schoolApi.ts → localStorage (persist) when checked, sessionStorage (clears on browser close) when unchecked, and it clears the other store. getToken/getSession read both stores; clearSession wipes both.
+- Forgot password (ALL users): `POST /auth/forgot-password {identifier}` resolves the user by username OR email and returns a 6-digit code IN THE RESPONSE BODY (that is how it reaches the user). `POST /auth/reset-password {identifier,code,newPassword}` checks an in-memory Map (10-min TTL, keyed by lowercased username) then updates the plaintext password. The frontend must pass the server-returned `username` (not the raw identifier) back into reset, since the key is the canonical username.
+- Demo logins: `DEMO_ACCOUNTS` in schoolApi.ts is the on-screen quick-login list and MUST stay in sync with `011_demo_users.sql` (+ superadmin from 010).
+- Pre-launch cleanup: drop the demo users, remove the demo panel + DEMO_ACCOUNTS, and replace on-screen OTP with real email delivery (and consider enforcing `is_active` in login/reset — currently ignored).
+
 ## Applying migrations to Supabase from Replit (use the Management API)
 - **Method that works:** POST `https://api.supabase.com/v1/projects/<ref>/database/query`, header `Authorization: Bearer $SUPABASE_ACCESS_TOKEN`, body `{"query":"<sql>"}`. `<ref>` = subdomain of `SUPABASE_URL`. Supabase SQL Editor is the manual fallback.
 - **Why not `psql`/`pg` from Replit:** direct host `db.<ref>.supabase.co` is **IPv6-only → ENOTFOUND**. The session pooler (`aws-0-<region>.pooler.supabase.com`, user `postgres.<ref>`) is reachable but auth failed `28P01` (stored DB password was wrong, user-side). The Management API (PAT) sidesteps both.
 - **Each API call wraps the whole file's SQL in ONE transaction** — any single error rolls back the entire file. (006's enum ALTER failing reverted ALL of 006's tables/columns.)
 - **Enum→TEXT + RLS gotcha:** Postgres refuses `ALTER COLUMN ... TYPE` while an RLS policy references that column. 002 creates `anon_read_active_courses` on `school_courses.status`; 006 now DROPs it before the ALTER and recreates it after. Any future enum→text conversion must drop dependent policies first.
-- **Order:** 001 schema, 002 rls, 003 realtime, 004 storage, 005 functions, 006 phase1 (schema only now), 007 phase2, 008 phase3, 009 clears demo data, 010 seeds the superadmin.
+- **Order:** 001 schema, 002 rls, 003 realtime, 004 storage, 005 functions, 006 phase1 (schema only now), 007 phase2, 008 phase3, 009 clears demo data, 010 seeds the superadmin, 011 seeds demo logins (one per role, pw Demo2026).
 
 ## Phase 2 access-control convention (school.ts) — KEEP CONSISTENT
 **Why:** academic records and payroll are sensitive; an early version let any logged-in user read/write any student's data (IDOR).

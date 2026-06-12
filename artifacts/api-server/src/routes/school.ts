@@ -46,6 +46,10 @@ async function assertCourseAccess(req: AuthRequest, res: Response, courseId: str
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
+const RESET_TTL_MS = 10 * 60 * 1000;
+const resetCodes = new Map<string, { code: string; expires: number; userId: number }>();
+function genResetCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
+
 /* ─── DB types ──────────────────────────────────────────────── */
 interface DbUser { id: number; username: string; password: string; name: string; email: string; phone?: string; role: string; is_active?: boolean; created_at: string; }
 interface DbCourse { id: string; title: string; description: string; instructor_id: string; duration: string; fee: string; schedule: string; students: string[]; materials: { title: string; url: string }[]; status: string; capacity?: number; category?: string; created_at: string; }
@@ -121,6 +125,39 @@ router.post("/auth/setup", async (req, res) => {
   const u = data as DbUser;
   const token = signToken({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role });
   res.status(201).json({ token, user: fmtUser(u) });
+});
+
+/* Forgot password — any user can request a one-time code. The user chose to
+   have the code shown on screen (no email service), so it is returned in the
+   response. Codes live in memory for 10 minutes. */
+router.post("/auth/forgot-password", async (req, res) => {
+  const { identifier } = req.body as { identifier?: string };
+  const id = (identifier || "").trim();
+  if (!id) { res.status(400).json({ error: "Please enter your username or email" }); return; }
+  const db = getSupabase();
+  let { data } = await db.from("school_users").select("id, username, name, email").eq("username", id).limit(1).maybeSingle();
+  if (!data) ({ data } = await db.from("school_users").select("id, username, name, email").eq("email", id).limit(1).maybeSingle());
+  if (!data) { res.status(404).json({ error: "No account found with that username or email" }); return; }
+  const u = data as { id: number; username: string; name: string; email: string };
+  const code = genResetCode();
+  resetCodes.set(u.username.toLowerCase(), { code, expires: Date.now() + RESET_TTL_MS, userId: u.id });
+  res.json({ ok: true, username: u.username, name: u.name, code });
+});
+
+router.post("/auth/reset-password", async (req, res) => {
+  const { identifier, code, newPassword } = req.body as { identifier?: string; code?: string; newPassword?: string };
+  const key = (identifier || "").trim().toLowerCase();
+  const c = (code || "").trim();
+  if (!key || !c || !newPassword) { res.status(400).json({ error: "All fields are required" }); return; }
+  if (newPassword.length < 6) { res.status(400).json({ error: "New password must be at least 6 characters" }); return; }
+  const entry = resetCodes.get(key);
+  if (!entry || entry.expires < Date.now()) { resetCodes.delete(key); res.status(400).json({ error: "Your code has expired. Please request a new one." }); return; }
+  if (entry.code !== c) { res.status(400).json({ error: "Incorrect code. Please check and try again." }); return; }
+  const db = getSupabase();
+  const { error } = await db.from("school_users").update({ password: newPassword }).eq("id", entry.userId);
+  if (error) { res.status(500).json({ error: "Could not reset your password. Please try again." }); return; }
+  resetCodes.delete(key);
+  res.json({ ok: true });
 });
 
 router.get("/me", requireAuth, async (req: AuthRequest, res) => {
