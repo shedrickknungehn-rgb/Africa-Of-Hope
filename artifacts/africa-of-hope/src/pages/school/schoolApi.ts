@@ -79,6 +79,44 @@ export interface Payment {
   paidAt: string | null; notes: string; createdAt: string;
 }
 
+export interface Attendance {
+  id: string; studentId: string; studentName?: string;
+  courseId: string; courseTitle?: string; sessionDate: string;
+  status: "present" | "absent" | "late" | "excused";
+  notes: string; recordedBy: string; createdAt: string;
+}
+
+export interface Grade {
+  id: string; studentId: string; studentName?: string;
+  courseId: string; courseTitle?: string; assessment: string;
+  score: string; maxScore: string; weight: string;
+  grade: string; comment: string; recordedBy: string; createdAt: string;
+}
+
+export interface StaffRecord {
+  id: string; userId: string; userName?: string;
+  position: string; department: string;
+  employmentType: "full_time" | "part_time" | "contract" | "volunteer";
+  hireDate: string | null; salary: string;
+  status: "active" | "on_leave" | "terminated";
+  emergencyContact: string; notes: string; createdAt: string;
+}
+
+export interface LeaveRequest {
+  id: string; userId: string; userName?: string;
+  type: "annual" | "sick" | "personal" | "unpaid" | "maternity";
+  startDate: string; endDate: string; reason: string;
+  status: "pending" | "approved" | "rejected";
+  reviewedBy: string; reviewNotes: string; createdAt: string;
+}
+
+export interface Payroll {
+  id: string; userId: string; userName?: string;
+  period: string; gross: string; deductions: string; net: string;
+  status: "pending" | "paid"; paidAt: string | null;
+  notes: string; createdAt: string;
+}
+
 export interface ReportOverview {
   totalUsers: number; totalStudents: number; totalInstructors: number; totalManagement: number;
   totalCourses: number; activeCourses: number; totalEnrollments: number;
@@ -133,6 +171,7 @@ export const apiDeleteUser = (id: string) => apiFetch<void>(`/users/${id}`, { me
 export const apiGetCourses = () => apiFetch<Course[]>("/courses");
 export const apiCreateCourse = (c: Omit<Course, "id" | "createdAt" | "students" | "materials">) => apiFetch<Course>("/courses", { method: "POST", body: JSON.stringify(c) });
 export const apiUpdateCourse = (id: string, updates: Partial<Course>) => apiFetch<Course>(`/courses/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+export const apiUpdateCourseMaterials = (id: string, materials: { title: string; url: string }[]) => apiFetch<Course>(`/courses/${id}/materials`, { method: "PATCH", body: JSON.stringify({ materials }) });
 export const apiDeleteCourse = (id: string) => apiFetch<void>(`/courses/${id}`, { method: "DELETE" });
 
 /* ─── Sessions ───────────────────────────────────────────────── */
@@ -172,6 +211,56 @@ export const apiGetPayments = (params?: { studentId?: string; status?: string })
 };
 export const apiCreatePayment = (data: Omit<Payment, "id" | "createdAt" | "studentName" | "courseTitle">) => apiFetch<Payment>("/payments", { method: "POST", body: JSON.stringify(data) });
 export const apiUpdatePayment = (id: string, updates: Partial<Payment>) => apiFetch<Payment>(`/payments/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+
+/* ─── Attendance ─────────────────────────────────────────────── */
+export const apiGetAttendance = (params?: { courseId?: string; studentId?: string; date?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.courseId) q.set("courseId", params.courseId);
+  if (params?.studentId) q.set("studentId", params.studentId);
+  if (params?.date) q.set("date", params.date);
+  const qs = q.toString();
+  return apiFetch<Attendance[]>(`/attendance${qs ? `?${qs}` : ""}`);
+};
+export const apiSaveAttendance = (data: { courseId: string; sessionDate: string; records: { studentId: string; status: string; notes?: string }[] }) => apiFetch<Attendance[]>("/attendance", { method: "POST", body: JSON.stringify(data) });
+export const apiDeleteAttendance = (id: string) => apiFetch<void>(`/attendance/${id}`, { method: "DELETE" });
+
+/* ─── Grades ─────────────────────────────────────────────────── */
+export const apiGetGrades = (params?: { courseId?: string; studentId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.courseId) q.set("courseId", params.courseId);
+  if (params?.studentId) q.set("studentId", params.studentId);
+  const qs = q.toString();
+  return apiFetch<Grade[]>(`/grades${qs ? `?${qs}` : ""}`);
+};
+export const apiCreateGrade = (data: { studentId: string; courseId: string; assessment: string; score?: string; maxScore?: string; weight?: string; grade?: string; comment?: string }) => apiFetch<Grade>("/grades", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateGrade = (id: string, updates: Partial<Grade>) => apiFetch<Grade>(`/grades/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+export const apiDeleteGrade = (id: string) => apiFetch<void>(`/grades/${id}`, { method: "DELETE" });
+
+/* ─── HR: Staff Records ──────────────────────────────────────── */
+export const apiGetStaff = () => apiFetch<StaffRecord[]>("/staff");
+export const apiCreateStaff = (data: Omit<StaffRecord, "id" | "createdAt" | "userName">) => apiFetch<StaffRecord>("/staff", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateStaff = (id: string, updates: Partial<StaffRecord>) => apiFetch<StaffRecord>(`/staff/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+export const apiDeleteStaff = (id: string) => apiFetch<void>(`/staff/${id}`, { method: "DELETE" });
+
+/* ─── HR: Leave Requests ─────────────────────────────────────── */
+export const apiGetLeave = (params?: { userId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.userId) q.set("userId", params.userId);
+  const qs = q.toString();
+  return apiFetch<LeaveRequest[]>(`/leave${qs ? `?${qs}` : ""}`);
+};
+export const apiCreateLeave = (data: { type: string; startDate: string; endDate: string; reason?: string }) => apiFetch<LeaveRequest>("/leave", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateLeave = (id: string, updates: { status?: string; reviewNotes?: string }) => apiFetch<LeaveRequest>(`/leave/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+
+/* ─── HR: Payroll ────────────────────────────────────────────── */
+export const apiGetPayroll = (params?: { userId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.userId) q.set("userId", params.userId);
+  const qs = q.toString();
+  return apiFetch<Payroll[]>(`/payroll${qs ? `?${qs}` : ""}`);
+};
+export const apiCreatePayroll = (data: { userId: string; period: string; gross?: string; deductions?: string; net?: string; notes?: string }) => apiFetch<Payroll>("/payroll", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdatePayroll = (id: string, updates: Partial<Payroll>) => apiFetch<Payroll>(`/payroll/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
 
 /* ─── Reports ────────────────────────────────────────────────── */
 export const apiGetReportOverview = () => apiFetch<ReportOverview>("/reports/overview");

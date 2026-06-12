@@ -62,6 +62,19 @@ File: `supabase/migrations/006_phase1_expansion.sql`
 Run in: Supabase Dashboard → SQL Editor → paste entire file → Run
 This converts role/status ENUMs to TEXT and creates enrollments/announcements/events/payments tables.
 
+## CRITICAL: Migration 007 must be run in Supabase before Phase 2 tables work
+File: `supabase/migrations/007_phase2_expansion.sql`
+Creates school_attendance, school_grades, school_staff_records, school_leave_requests, school_payroll.
+Run manually in Supabase SQL Editor (same as 006). HRTab shows a warning banner when these tables are missing.
+
+## Phase 2 access-control convention (school.ts) — KEEP CONSISTENT
+**Why:** academic records and payroll are sensitive; an early version let any logged-in user read/write any student's data (IDOR).
+**How to apply:**
+- `GET /attendance` and `GET /grades`: if `!STAFF.has(role)` (i.e. student/alumni), force `student_id = req.user.id` — they only ever see their own rows. Staff may filter by studentId/courseId.
+- Staff writes to attendance/grades/materials must pass `assertCourseAccess(req,res,courseId)`: management + assistant → any class; instructor → only courses where `instructor_id === user.id`. For PATCH/DELETE, look up the row's course_id first, then assert.
+- Instructor materials editing uses dedicated `PATCH /courses/:id/materials` (requireStaff + assertCourseAccess), NOT `PATCH /courses/:id` (requireMgmt). Frontend: `apiUpdateCourseMaterials`.
+- Leave/payroll: non-management constrained to their own rows; staff records + payroll create/update are requireMgmt.
+
 ## Env Variables Required
 ### Backend
 - `SUPABASE_URL` — Supabase project URL

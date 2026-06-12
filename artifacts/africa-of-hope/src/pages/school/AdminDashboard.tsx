@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   BarChart2, Users, BookOpen, ClipboardList, DollarSign,
-  Bell, Calendar, TrendingUp, LogOut, Home, X, Menu, RefreshCw,
+  Bell, Calendar, TrendingUp, LogOut, Home, X, Menu, RefreshCw, Briefcase,
 } from "lucide-react";
 import {
   User, Course, LiveSession, Enrollment, Announcement, SchoolEvent, Payment, ReportOverview,
@@ -18,8 +18,9 @@ import FinanceTab from "./admin/FinanceTab";
 import AnnouncementsTab from "./admin/AnnouncementsTab";
 import EventsTab from "./admin/EventsTab";
 import ReportsTab from "./admin/ReportsTab";
+import HRTab from "./admin/HRTab";
 
-type Tab = "overview" | "users" | "courses" | "enrollments" | "finance" | "announcements" | "events" | "reports";
+type Tab = "overview" | "users" | "courses" | "enrollments" | "finance" | "hr" | "announcements" | "events" | "reports";
 
 interface NavItem { key: Tab; label: string; icon: React.ElementType; }
 
@@ -34,6 +35,7 @@ const NAV_GROUPS = [
     ],
   },
   { label: "Finance", items: [{ key: "finance" as Tab, label: "Finance", icon: DollarSign }] },
+  { label: "Human Resources", items: [{ key: "hr" as Tab, label: "HR & Payroll", icon: Briefcase }] },
   {
     label: "Communication",
     items: [
@@ -47,6 +49,7 @@ const NAV_GROUPS = [
 const TAB_TITLES: Record<Tab, string> = {
   overview: "Overview", users: "User Management", courses: "Course Management",
   enrollments: "Enrollment Management", finance: "Finance Management",
+  hr: "Human Resources & Payroll",
   announcements: "Announcements", events: "Events", reports: "Reports & Analytics",
 };
 
@@ -203,6 +206,7 @@ export default function AdminDashboard({ user }: { user: User }) {
                 {tab === "courses" && <CoursesTab courses={courses} users={users} onRefresh={refreshCourses} />}
                 {tab === "enrollments" && <EnrollmentsTab enrollments={enrollments} users={users} courses={courses} onRefresh={refreshEnrollments} />}
                 {tab === "finance" && <FinanceTab payments={payments} users={users} courses={courses} enrollments={enrollments} onRefresh={refreshPayments} />}
+                {tab === "hr" && <HRTab users={users} />}
                 {tab === "announcements" && <AnnouncementsTab announcements={announcements} currentUser={user} onRefresh={refreshAnnouncements} />}
                 {tab === "events" && <EventsTab events={events} onRefresh={refreshEvents} />}
                 {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} />}

@@ -1,44 +1,70 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X } from "lucide-react";
-import { User, Course, apiGetCourses, clearSession } from "./schoolApi";
+import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar } from "lucide-react";
+import {
+  User, Course, Enrollment, Grade, Attendance, Payment, Announcement, SchoolEvent,
+  apiGetCourses, apiGetEnrollments, apiGetGrades, apiGetAttendance, apiGetPayments,
+  apiGetAnnouncements, apiGetEvents, clearSession,
+} from "./schoolApi";
 
-type Tab = "overview" | "courses" | "join-class" | "materials";
+type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "announcements" | "events";
 
 export default function StudentDashboard({ user }: { user: User }) {
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const isAlumni = user.role === "alumni";
   const [courses, setCourses] = useState<Course[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [grades, setGrades] = useState<Grade[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [events, setEvents] = useState<SchoolEvent[]>([]);
 
   useEffect(() => {
-    apiGetCourses().then((all) => setCourses(all.filter((c) => c.status === "active"))).catch(() => {});
-  }, []);
+    apiGetCourses().then(setCourses).catch(() => {});
+    apiGetEnrollments({ studentId: user.id }).then(setEnrollments).catch(() => {});
+    apiGetGrades({ studentId: user.id }).then(setGrades).catch(() => {});
+    apiGetAttendance({ studentId: user.id }).then(setAttendance).catch(() => {});
+    apiGetPayments({ studentId: user.id }).then(setPayments).catch(() => {});
+    apiGetAnnouncements().then(setAnnouncements).catch(() => {});
+    apiGetEvents().then(setEvents).catch(() => {});
+  }, [user.id]);
+
+  const myCourses = useMemo(() => {
+    const ids = new Set(enrollments.filter((e) => e.status !== "withdrawn").map((e) => e.courseId));
+    const enrolled = courses.filter((c) => ids.has(c.id));
+    return enrolled.length > 0 ? enrolled : (isAlumni ? [] : courses.filter((c) => c.status === "active"));
+  }, [courses, enrollments, isAlumni]);
+
+  const myAnnouncements = announcements.filter(
+    (a) => a.targetRoles.includes("all") || a.targetRoles.includes("student") || (isAlumni && a.targetRoles.includes("alumni"))
+  );
 
   const tabs = [
     { key: "overview" as Tab, label: "Overview", icon: BarChart2 },
-    { key: "courses" as Tab, label: "My Courses", icon: BookOpen },
-    { key: "join-class" as Tab, label: "Join Live Class", icon: Video },
-    { key: "materials" as Tab, label: "Materials", icon: FileText },
+    { key: "courses" as Tab, label: isAlumni ? "My Programs" : "My Courses", icon: BookOpen },
+    { key: "transcript" as Tab, label: "Grades & Transcript", icon: GraduationCap },
+    { key: "attendance" as Tab, label: "Attendance", icon: ClipboardCheck },
+    { key: "finance" as Tab, label: "Finance", icon: DollarSign },
+    { key: "announcements" as Tab, label: "Announcements", icon: Bell },
+    { key: "events" as Tab, label: "Events", icon: Calendar },
   ];
 
-  const changeTab = (t: Tab) => {
-    setTab(t);
-    setSidebarOpen(false);
-  };
+  const changeTab = (t: Tab) => { setTab(t); setSidebarOpen(false); };
 
   const Sidebar = () => (
     <div className="h-full flex flex-col bg-[#0d3d1a]">
       <div className="p-4 border-b border-white/10">
-        <div className="bg-white rounded-xl px-3 py-2 mx-auto w-fit mb-2 shadow-md">
-          <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-9 w-auto object-contain" />
-        </div>
+        <div className="bg-white rounded-xl px-3 py-2 mx-auto w-fit mb-2 shadow-md"><img src="/logo-full.png" alt="Africa of Hope Inc" className="h-9 w-auto object-contain" /></div>
         <p className="text-[#d4a017] text-[10px] text-center font-bold tracking-widest uppercase mt-1">School Portal</p>
       </div>
       <div className="p-3 border-b border-white/10">
         <div className="bg-white/10 rounded-xl p-3">
           <p className="text-white font-bold text-sm">{user.name}</p>
-          <span className="inline-block bg-green-500/20 text-green-300 text-xs font-bold px-2 py-0.5 rounded-full uppercase mt-0.5">Student</span>
+          <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full uppercase mt-0.5 ${isAlumni ? "bg-indigo-500/20 text-indigo-300" : "bg-green-500/20 text-green-300"}`}>{isAlumni ? "Alumni" : "Student"}</span>
         </div>
       </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
@@ -58,32 +84,16 @@ export default function StudentDashboard({ user }: { user: User }) {
 
   return (
     <div className="flex h-screen bg-[#f7f5f0] overflow-hidden">
-      {/* Mobile backdrop */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* Sidebar */}
-      <div className={`
-        fixed top-0 left-0 h-full w-64 z-40 shadow-2xl
-        transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0 md:z-auto md:w-56 md:flex-shrink-0 md:shadow-none
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-      `}>
-        <button className="absolute top-4 right-4 z-50 text-white/70 hover:text-white md:hidden p-1" onClick={() => setSidebarOpen(false)}>
-          <X className="w-5 h-5" />
-        </button>
+      {sidebarOpen && <div className="fixed inset-0 bg-black/60 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />}
+      <div className={`fixed top-0 left-0 h-full w-64 z-40 shadow-2xl transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:z-auto md:w-56 md:flex-shrink-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <button className="absolute top-4 right-4 z-50 text-white/70 hover:text-white md:hidden p-1" onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button>
         <Sidebar />
       </div>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile header */}
         <div className="md:hidden flex items-center gap-3 bg-[#0d3d1a] px-4 py-3 flex-shrink-0 shadow-lg">
           <button onClick={() => setSidebarOpen(true)} className="text-white p-1 touch-manipulation"><Menu className="w-6 h-6" /></button>
-          <div className="bg-white rounded-lg px-2 py-1">
-            <img src="/logo-full.png" alt="AOH" className="h-6 w-auto object-contain" />
-          </div>
+          <div className="bg-white rounded-lg px-2 py-1"><img src="/logo-full.png" alt="AOH" className="h-6 w-auto object-contain" /></div>
           <span className="text-white font-black text-sm flex-1">School Portal</span>
           <span className="text-white/60 text-xs truncate max-w-[80px]">{user.name.split(" ")[0]}</span>
         </div>
@@ -94,114 +104,251 @@ export default function StudentDashboard({ user }: { user: User }) {
             <p className="text-gray-500 text-sm">Africa of Hope School of Professional Studies</p>
           </div>
 
-          {tab === "overview" && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-3 sm:gap-4">
-                {[
-                  { label: "Enrolled Courses", value: courses.length, color: "bg-[#1a6b2a]" },
-                  { label: "Live Sessions", value: "0", color: "bg-blue-600" },
-                  { label: "Materials", value: courses.reduce((a, c) => a + c.materials.length, 0), color: "bg-[#d4a017]" },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="bg-white rounded-2xl p-3 sm:p-6 shadow-sm text-center">
-                    <div className={`w-8 h-8 sm:w-10 sm:h-10 ${color} rounded-xl flex items-center justify-center mx-auto mb-2 sm:mb-3`}><BarChart2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" /></div>
-                    <div className="text-xl sm:text-3xl font-black text-[#0f0f0f]">{value}</div>
-                    <div className="text-[10px] sm:text-sm font-bold text-gray-600 leading-tight mt-0.5">{label}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="bg-[#0d3d1a] rounded-2xl p-5 sm:p-6 text-white">
-                <div className="flex items-center gap-3 mb-3">
-                  <Bell className="w-5 h-5 text-[#d4a017]" />
-                  <h3 className="font-black">Announcement</h3>
-                </div>
-                <p className="text-white/70 text-sm">Welcome to Africa of Hope School of Professional Studies! Classes are now available. Join a live session or browse your course materials.</p>
-              </div>
-
-              <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm">
-                <h3 className="font-black text-[#0f0f0f] mb-4">Available Courses</h3>
-                <div className="space-y-3">
-                  {courses.slice(0, 3).map((c) => (
-                    <div key={c.id} className="flex items-center justify-between p-3 sm:p-4 bg-[#f7f5f0] rounded-xl gap-3">
-                      <div className="min-w-0">
-                        <p className="font-bold text-sm text-[#0f0f0f] truncate">{c.title}</p>
-                        <p className="text-xs text-gray-400">{c.duration} · {c.schedule}</p>
-                      </div>
-                      <button onClick={() => navigate(`/school/class/${c.id}`)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors flex-shrink-0 touch-manipulation">
-                        <Video className="w-3 h-3" />Join
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === "courses" && (
-            <div className="space-y-4">
-              {courses.map((c) => (
-                <div key={c.id} className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-black text-[#0f0f0f] mb-1">{c.title}</h3>
-                      <p className="text-gray-500 text-sm mb-3">{c.description}</p>
-                      <div className="flex flex-wrap gap-3 text-xs text-gray-400">
-                        <span>📅 {c.duration}</span><span>🕐 {c.schedule}</span><span>💰 {c.fee}</span>
-                      </div>
-                    </div>
-                    <button onClick={() => navigate(`/school/class/${c.id}`)} className="flex items-center gap-2 bg-[#1a6b2a] hover:bg-[#155a22] text-white font-bold text-sm px-4 py-2.5 rounded-xl transition-colors flex-shrink-0 touch-manipulation">
-                      <Video className="w-4 h-4" />Join Class
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab === "join-class" && (
-            <div className="max-w-lg">
-              <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm text-center">
-                <div className="w-20 h-20 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-5"><Video className="w-10 h-10 text-blue-600" /></div>
-                <h2 className="font-black text-2xl text-[#0f0f0f] mb-2">Join a Live Class</h2>
-                <p className="text-gray-500 text-sm mb-6">Select an active course to join. Your instructor must have started the session.</p>
-                <div className="space-y-3">
-                  {courses.map((c) => (
-                    <button key={c.id} onClick={() => navigate(`/school/class/${c.id}`)}
-                      className="w-full flex items-center justify-between p-4 bg-[#f7f5f0] hover:bg-[#1a6b2a] hover:text-white rounded-xl transition-all group text-left touch-manipulation">
-                      <div>
-                        <p className="font-bold text-sm group-hover:text-white">{c.title}</p>
-                        <p className="text-xs text-gray-400 group-hover:text-white/70">{c.schedule}</p>
-                      </div>
-                      <Video className="w-5 h-5 text-[#1a6b2a] group-hover:text-white" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === "materials" && (
-            <div className="space-y-4">
-              {courses.map((c) => c.materials.length > 0 && (
-                <div key={c.id} className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm">
-                  <h3 className="font-black text-[#0f0f0f] mb-4">{c.title}</h3>
-                  <div className="space-y-2">
-                    {c.materials.map((m) => (
-                      <a key={m.title} href={m.url} className="flex items-center gap-3 p-3 bg-[#f7f5f0] hover:bg-[#1a6b2a]/10 rounded-xl transition-colors group">
-                        <FileText className="w-5 h-5 text-[#1a6b2a] flex-shrink-0" />
-                        <span className="text-sm font-medium text-[#0f0f0f] group-hover:text-[#1a6b2a]">{m.title}</span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {courses.every((c) => c.materials.length === 0) && (
-                <div className="bg-white rounded-2xl p-10 shadow-sm text-center text-gray-400">No materials uploaded yet. Check back soon.</div>
-              )}
-            </div>
-          )}
+          {tab === "overview" && <OverviewView isAlumni={isAlumni} myCourses={myCourses} grades={grades} attendance={attendance} payments={payments} announcements={myAnnouncements} onGo={changeTab} onJoin={(id) => navigate(`/school/class/${id}`)} />}
+          {tab === "courses" && <CoursesView isAlumni={isAlumni} myCourses={myCourses} enrollments={enrollments} onJoin={(id) => navigate(`/school/class/${id}`)} />}
+          {tab === "transcript" && <TranscriptView grades={grades} courses={courses} />}
+          {tab === "attendance" && <AttendanceView attendance={attendance} />}
+          {tab === "finance" && <FinanceView payments={payments} />}
+          {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
+          {tab === "events" && <EventsView events={events} />}
         </div>
       </div>
     </div>
   );
+}
+
+/* ─── Overview ───────────────────────────────────────────────── */
+function OverviewView({ isAlumni, myCourses, grades, attendance, payments, announcements, onGo, onJoin }: {
+  isAlumni: boolean; myCourses: Course[]; grades: Grade[]; attendance: Attendance[]; payments: Payment[]; announcements: Announcement[]; onGo: (t: Tab) => void; onJoin: (id: string) => void;
+}) {
+  const presentRate = attendance.length ? Math.round((attendance.filter((a) => a.status === "present" || a.status === "late").length / attendance.length) * 100) : 0;
+  const outstanding = payments.filter((p) => p.status === "pending" || p.status === "overdue").length;
+  const stats = [
+    { label: isAlumni ? "Programs" : "Courses", value: myCourses.length, color: "bg-[#1a6b2a]" },
+    { label: "Grades", value: grades.length, color: "bg-[#d4a017]" },
+    { label: "Attendance", value: `${presentRate}%`, color: "bg-blue-600" },
+    { label: "Unpaid", value: outstanding, color: outstanding > 0 ? "bg-red-500" : "bg-gray-400" },
+  ];
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        {stats.map(({ label, value, color }) => (
+          <div key={label} className="bg-white rounded-2xl p-3 sm:p-6 shadow-sm text-center">
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 ${color} rounded-xl flex items-center justify-center mx-auto mb-2 sm:mb-3`}><BarChart2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" /></div>
+            <div className="text-xl sm:text-3xl font-black text-[#0f0f0f]">{value}</div>
+            <div className="text-[10px] sm:text-sm font-bold text-gray-600 leading-tight mt-0.5">{label}</div>
+          </div>
+        ))}
+      </div>
+      {announcements.length > 0 && (
+        <div className="bg-[#0d3d1a] rounded-2xl p-5 sm:p-6 text-white">
+          <div className="flex items-center gap-3 mb-3"><Bell className="w-5 h-5 text-[#d4a017]" /><h3 className="font-black">{announcements[0].title}</h3></div>
+          <p className="text-white/70 text-sm">{announcements[0].content}</p>
+          {announcements.length > 1 && <button onClick={() => onGo("announcements")} className="text-[#d4a017] text-xs font-bold mt-3 hover:underline">View all {announcements.length} announcements →</button>}
+        </div>
+      )}
+      {!isAlumni && myCourses.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm">
+          <h3 className="font-black text-[#0f0f0f] mb-4">Your Courses</h3>
+          <div className="space-y-3">
+            {myCourses.slice(0, 3).map((c) => (
+              <div key={c.id} className="flex items-center justify-between p-3 sm:p-4 bg-[#f7f5f0] rounded-xl gap-3">
+                <div className="min-w-0"><p className="font-bold text-sm text-[#0f0f0f] truncate">{c.title}</p><p className="text-xs text-gray-400">{c.duration} · {c.schedule}</p></div>
+                <button onClick={() => onJoin(c.id)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors flex-shrink-0 touch-manipulation"><Video className="w-3 h-3" />Join</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Courses ────────────────────────────────────────────────── */
+function CoursesView({ isAlumni, myCourses, enrollments, onJoin }: { isAlumni: boolean; myCourses: Course[]; enrollments: Enrollment[]; onJoin: (id: string) => void }) {
+  if (myCourses.length === 0) return <Empty text={isAlumni ? "No completed programs on record yet." : "You are not enrolled in any courses yet. Contact the registrar to enroll."} />;
+  const statusOf = (courseId: string) => enrollments.find((e) => e.courseId === courseId)?.status;
+  const badge: Record<string, string> = { active: "bg-green-100 text-green-700", pending: "bg-amber-100 text-amber-700", completed: "bg-blue-100 text-blue-700" };
+  return (
+    <div className="space-y-4">
+      {myCourses.map((c) => {
+        const st = statusOf(c.id);
+        return (
+          <div key={c.id} className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-black text-[#0f0f0f]">{c.title}</h3>
+                  {st && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${badge[st] || "bg-gray-100 text-gray-600"}`}>{st}</span>}
+                </div>
+                <p className="text-gray-500 text-sm mb-3">{c.description}</p>
+                <div className="flex flex-wrap gap-3 text-xs text-gray-400"><span>📅 {c.duration}</span><span>🕐 {c.schedule}</span><span>💰 {c.fee}</span></div>
+                {c.materials.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {c.materials.map((m, i) => <a key={i} href={m.url} className="inline-flex items-center gap-1 text-xs font-medium text-[#1a6b2a] bg-[#1a6b2a]/10 px-2 py-1 rounded-lg hover:bg-[#1a6b2a]/20"><FileText className="w-3 h-3" />{m.title}</a>)}
+                  </div>
+                )}
+              </div>
+              {!isAlumni && st !== "completed" && (
+                <button onClick={() => onJoin(c.id)} className="flex items-center gap-2 bg-[#1a6b2a] hover:bg-[#155a22] text-white font-bold text-sm px-4 py-2.5 rounded-xl transition-colors flex-shrink-0 touch-manipulation"><Video className="w-4 h-4" />Join Class</button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Transcript ─────────────────────────────────────────────── */
+function TranscriptView({ grades, courses }: { grades: Grade[]; courses: Course[] }) {
+  if (grades.length === 0) return <Empty text="No grades have been recorded yet." />;
+  const byCourse = useMemo(() => {
+    const map = new Map<string, Grade[]>();
+    grades.forEach((g) => { const arr = map.get(g.courseId) ?? []; arr.push(g); map.set(g.courseId, arr); });
+    return map;
+  }, [grades]);
+  const courseTitle = (id: string) => courses.find((c) => c.id === id)?.title || grades.find((g) => g.courseId === id)?.courseTitle || "Course";
+  const pct = (g: Grade) => { const s = parseFloat(g.score), m = parseFloat(g.maxScore); return m > 0 ? Math.round((s / m) * 100) : 0; };
+
+  return (
+    <div className="space-y-5">
+      {[...byCourse.entries()].map(([cid, list]) => {
+        const avg = Math.round(list.reduce((a, g) => a + pct(g), 0) / list.length);
+        return (
+          <div key={cid} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-[#0d3d1a] text-white px-5 py-3 flex items-center justify-between">
+              <h3 className="font-black text-sm">{courseTitle(cid)}</h3>
+              <span className="text-[#d4a017] font-black text-sm">Avg {avg}%</span>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-[#f7f5f0] text-gray-500 text-xs uppercase"><tr><th className="text-left px-5 py-2.5">Assessment</th><th className="text-left px-5 py-2.5">Score</th><th className="text-left px-5 py-2.5">%</th></tr></thead>
+              <tbody>
+                {list.map((g) => (
+                  <tr key={g.id} className="border-t border-gray-100">
+                    <td className="px-5 py-3 font-bold text-[#0f0f0f]">{g.assessment}{g.comment && <span className="block text-xs font-normal text-gray-400">{g.comment}</span>}</td>
+                    <td className="px-5 py-3 font-mono">{g.score}/{g.maxScore}</td>
+                    <td className="px-5 py-3 font-bold text-[#1a6b2a]">{pct(g)}%{g.grade && <span className="ml-1">({g.grade})</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Attendance ─────────────────────────────────────────────── */
+function AttendanceView({ attendance }: { attendance: Attendance[] }) {
+  if (attendance.length === 0) return <Empty text="No attendance records yet." />;
+  const counts = attendance.reduce((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const rate = Math.round(((counts.present || 0) + (counts.late || 0)) / attendance.length * 100);
+  const colors: Record<string, string> = { present: "text-green-600", absent: "text-red-600", late: "text-amber-600", excused: "text-blue-600" };
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="bg-[#0d3d1a] text-white rounded-2xl p-4 text-center col-span-2 sm:col-span-1"><div className="text-2xl font-black text-[#d4a017]">{rate}%</div><div className="text-xs font-bold text-white/70">Attendance Rate</div></div>
+        {(["present", "absent", "late", "excused"] as const).map((s) => (
+          <div key={s} className="bg-white rounded-2xl p-4 text-center shadow-sm"><div className={`text-2xl font-black ${colors[s]}`}>{counts[s] || 0}</div><div className="text-xs font-bold text-gray-500 capitalize">{s}</div></div>
+        ))}
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-[#f7f5f0] text-gray-500 text-xs uppercase"><tr><th className="text-left px-5 py-2.5">Date</th><th className="text-left px-5 py-2.5">Class</th><th className="text-left px-5 py-2.5">Status</th></tr></thead>
+          <tbody>
+            {attendance.map((a) => (
+              <tr key={a.id} className="border-t border-gray-100">
+                <td className="px-5 py-3 text-gray-600">{new Date(a.sessionDate).toLocaleDateString()}</td>
+                <td className="px-5 py-3 font-bold text-[#0f0f0f]">{a.courseTitle}</td>
+                <td className={`px-5 py-3 font-bold capitalize ${colors[a.status]}`}>{a.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Finance ────────────────────────────────────────────────── */
+function FinanceView({ payments }: { payments: Payment[] }) {
+  const num = (s: string) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
+  const paid = payments.filter((p) => p.status === "paid").reduce((a, p) => a + num(p.amount), 0);
+  const due = payments.filter((p) => p.status === "pending" || p.status === "overdue").reduce((a, p) => a + num(p.amount), 0);
+  const badge: Record<string, string> = { paid: "bg-green-100 text-green-700", pending: "bg-amber-100 text-amber-700", overdue: "bg-red-100 text-red-700", waived: "bg-gray-100 text-gray-600" };
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-2xl p-5 shadow-sm"><div className="text-xs font-bold text-gray-500 uppercase">Total Paid</div><div className="text-2xl font-black text-green-600">${paid.toFixed(2)}</div></div>
+        <div className="bg-white rounded-2xl p-5 shadow-sm"><div className="text-xs font-bold text-gray-500 uppercase">Outstanding</div><div className={`text-2xl font-black ${due > 0 ? "text-red-600" : "text-gray-400"}`}>${due.toFixed(2)}</div></div>
+      </div>
+      {payments.length === 0 ? <Empty text="No payment records yet." /> : (
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-[#f7f5f0] text-gray-500 text-xs uppercase"><tr><th className="text-left px-5 py-2.5">Course</th><th className="text-left px-5 py-2.5">Amount</th><th className="text-left px-5 py-2.5">Due</th><th className="text-left px-5 py-2.5">Status</th></tr></thead>
+            <tbody>
+              {payments.map((p) => (
+                <tr key={p.id} className="border-t border-gray-100">
+                  <td className="px-5 py-3 font-bold text-[#0f0f0f]">{p.courseTitle || "—"}</td>
+                  <td className="px-5 py-3 font-mono">${num(p.amount).toFixed(2)}</td>
+                  <td className="px-5 py-3 text-gray-500">{p.dueDate ? new Date(p.dueDate).toLocaleDateString() : "—"}</td>
+                  <td className="px-5 py-3"><span className={`text-xs font-bold px-2 py-1 rounded-full capitalize ${badge[p.status]}`}>{p.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Announcements ──────────────────────────────────────────── */
+function AnnouncementsView({ announcements }: { announcements: Announcement[] }) {
+  if (announcements.length === 0) return <Empty text="No announcements right now." />;
+  const colors: Record<string, string> = { urgent: "border-red-400 bg-red-50", high: "border-amber-400 bg-amber-50", normal: "border-gray-200 bg-white", low: "border-gray-200 bg-white" };
+  return (
+    <div className="space-y-3">
+      {announcements.map((a) => (
+        <div key={a.id} className={`rounded-2xl p-5 shadow-sm border-l-4 ${colors[a.priority] || colors.normal}`}>
+          <div className="flex items-center justify-between gap-2 flex-wrap"><h3 className="font-black text-[#0f0f0f]">{a.title}</h3><span className="text-xs font-bold uppercase text-gray-400">{a.priority}</span></div>
+          <p className="text-gray-600 text-sm mt-1">{a.content}</p>
+          <p className="text-xs text-gray-400 mt-2">{a.authorName} · {new Date(a.createdAt).toLocaleDateString()}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Events ─────────────────────────────────────────────────── */
+function EventsView({ events }: { events: SchoolEvent[] }) {
+  if (events.length === 0) return <Empty text="No upcoming events." />;
+  const now = Date.now();
+  const colors: Record<string, string> = { academic: "bg-[#1a6b2a]", social: "bg-[#d4a017]", administrative: "bg-blue-600", external: "bg-purple-600" };
+  return (
+    <div className="space-y-3">
+      {events.map((e) => {
+        const past = new Date(e.date).getTime() < now;
+        return (
+          <div key={e.id} className={`bg-white rounded-2xl p-5 shadow-sm flex items-start gap-4 ${past ? "opacity-60" : ""}`}>
+            <div className={`w-12 h-12 ${colors[e.type] || "bg-gray-500"} rounded-xl flex flex-col items-center justify-center text-white flex-shrink-0`}>
+              <span className="text-[10px] font-bold uppercase">{new Date(e.date).toLocaleString("en", { month: "short" })}</span>
+              <span className="text-lg font-black leading-none">{new Date(e.date).getDate()}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-[#0f0f0f]">{e.title}</h3><span className="text-[10px] font-bold uppercase text-gray-400">{e.type}</span></div>
+              <p className="text-gray-500 text-sm mt-0.5">{e.description}</p>
+              <p className="text-xs text-gray-400 mt-1">📍 {e.location || "TBA"} · {new Date(e.date).toLocaleString()}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="bg-white rounded-2xl p-10 shadow-sm text-center text-gray-400">{text}</div>;
 }
