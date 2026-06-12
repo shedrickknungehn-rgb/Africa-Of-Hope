@@ -35,8 +35,10 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 - `supabase/migrations/006..008` — phase 1/2/3 schema + table expansions
 - `supabase/migrations/009_remove_demo_data.sql` — one-time wipe of all school_* rows
 - `supabase/migrations/010_superadmin.sql` — seeds the one super_admin login
-- `supabase/migrations/011_demo_users.sql` — seeds demo logins (one per role, pw Demo2026)
+- `supabase/migrations/011_demo_users.sql` — RETIRED no-op (used to seed demo logins; demo accounts removed for launch)
 - `supabase/migrations/012_password_reset_codes.sql` — `password_reset_codes` table (forgot-password store) + service_role-only RLS
+- `supabase/migrations/013_reset_code_attempts.sql` — adds `attempts INT` to `password_reset_codes` for brute-force lockout
+- `supabase/migrations/014_remove_demo_users.sql` — deletes any already-seeded demo logins (keeps the super_admin)
 - `supabase/README.md` — deployment guide
 - NOTE: the old `supabase/seed.sql` was DELETED (it re-added demo credentials, contradicting the clean-slate model; nothing runs it)
 
@@ -78,13 +80,15 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 
 **Why plaintext passwords in DB:** AdminDashboard Users tab has show/hide password for admins to share credentials with enrolled students. Internal portal only.
 
-## Login UX: remember-me, on-screen OTP reset, demo logins (INTENTIONAL temp relaxation)
-**Why:** user explicitly asked for quick access "for now" and chose to have password-reset codes shown ON SCREEN (no email service is configured). These are accepted demo-phase tradeoffs to remove/harden before go-live — do NOT "fix" them unprompted.
+## Login security (HARDENED for go-live — pre-launch relaxations are now removed)
+**Why:** the demo-phase shortcuts (on-screen reset codes, demo logins, no lockout, ignored `is_active`) were deliberately removed before public launch. Do NOT reintroduce them.
 **How to apply:**
 - Remember-me: `storeSession(token,user,remember)` in schoolApi.ts → localStorage (persist) when checked, sessionStorage (clears on browser close) when unchecked, and it clears the other store. getToken/getSession read both stores; clearSession wipes both.
-- Forgot password (ALL users): `POST /auth/forgot-password {identifier}` resolves the user by username OR email and returns a 6-digit code IN THE RESPONSE BODY (that is how it reaches the user). `POST /auth/reset-password {identifier,code,newPassword}` validates against the `password_reset_codes` Supabase table (10-min TTL, PK = lowercased username) then updates the plaintext password and deletes the row. Stored in DB (not memory) because Vercel serverless is stateless. The frontend must pass the server-returned `username` (not the raw identifier) back into reset, since the key is the canonical username.
-- Demo logins: `DEMO_ACCOUNTS` in schoolApi.ts is the on-screen quick-login list and MUST stay in sync with `011_demo_users.sql` (+ superadmin from 010).
-- Pre-launch cleanup: drop the demo users, remove the demo panel + DEMO_ACCOUNTS, and replace on-screen OTP with real email delivery (and consider enforcing `is_active` in login/reset — currently ignored).
+- Forgot password (ALL users): `POST /auth/forgot-password {identifier}` resolves the user by username OR email, EMAILS the 6-digit code via Resend, and ALWAYS returns generic `{ok:true}` (anti-enumeration — never reveals whether the account/email exists, never returns the code). In prod it 500s if email is unconfigured; in dev it logs the code. Deactivated (`is_active===false`) or email-less accounts silently get the generic ok with no email sent.
+- Email delivery: `artifacts/api-server/src/lib/mailer.ts` calls the Resend REST API directly with `RESEND_API_KEY` (NOT the Replit connector — connector proxy is unavailable on Vercel prod). Optional `RESET_EMAIL_FROM` overrides the sender; until a domain is verified in Resend, the shared onboarding sender only delivers to the Resend account's own email. Both `RESEND_API_KEY` and `RESET_EMAIL_FROM` must also be set in Vercel env.
+- Reset: `POST /auth/reset-password {identifier,code,newPassword}` resolves user by username/email, rejects `is_active===false` (403), and LOCKS OUT after `MAX_RESET_ATTEMPTS=5` wrong guesses (429), deleting the row on success or lockout. The check+increment MUST stay atomic: it calls the `claim_password_reset_attempt(username_key,code,max)` SQL function (migration 015) which locks the row with `SELECT ... FOR UPDATE`. **Why:** a plain read-then-write increment races under concurrent requests — parallel wrong guesses read the same count and overwrite each other, letting an attacker exceed the limit. Do NOT revert to incrementing the `attempts` column (migration 013) from JS.
+- Login: rejects `is_active===false` with 403.
+- Demo logins fully removed: no `DEMO_ACCOUNTS`/demo panel in the UI, `011_demo_users.sql` retired to a no-op, `014_remove_demo_users.sql` deletes any seeded demo rows (super_admin from 010 is kept).
 
 ## Applying migrations to Supabase from Replit (use the Management API)
 - **Method that works:** POST `https://api.supabase.com/v1/projects/<ref>/database/query`, header `Authorization: Bearer $SUPABASE_ACCESS_TOKEN`, body `{"query":"<sql>"}`. `<ref>` = subdomain of `SUPABASE_URL`. Supabase SQL Editor is the manual fallback.

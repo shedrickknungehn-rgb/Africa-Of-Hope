@@ -1,6 +1,8 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { getSupabase } from "../lib/db";
 import { signToken, verifyToken, type JwtPayload } from "../lib/jwt";
+import { isEmailConfigured, sendResetCodeEmail } from "../lib/mailer";
+import { logger } from "../lib/logger";
 
 const router = Router();
 type AuthRequest = Request & { user?: JwtPayload };
@@ -47,6 +49,8 @@ async function assertCourseAccess(req: AuthRequest, res: Response, courseId: str
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
 const RESET_TTL_MS = 10 * 60 * 1000;
+// Lock a reset code after this many wrong guesses so the 6-digit code can't be brute-forced.
+const MAX_RESET_ATTEMPTS = 5;
 function genResetCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
 
 /* ─── DB types ──────────────────────────────────────────────── */
@@ -95,6 +99,7 @@ router.post("/auth/login", async (req, res) => {
   const { data, error } = await db.from("school_users").select("*").eq("username", username.trim()).limit(1).single();
   if (error || !data || (data as DbUser).password !== password) { res.status(401).json({ error: "Invalid username or password" }); return; }
   const u = data as DbUser;
+  if (u.is_active === false) { res.status(403).json({ error: "This account has been deactivated. Please contact an administrator." }); return; }
   const token = signToken({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role });
   res.json({ token, user: fmtUser(u) });
 });
@@ -126,19 +131,29 @@ router.post("/auth/setup", async (req, res) => {
   res.status(201).json({ token, user: fmtUser(u) });
 });
 
-/* Forgot password — any user can request a one-time code. The user chose to
-   have the code shown on screen (no email service), so it is returned in the
-   response. Codes are stored in Supabase (password_reset_codes) for 10 minutes
-   so the flow survives across stateless serverless invocations. */
+/* Forgot password — any user can request a one-time code. The code is emailed
+   (Resend) and never returned in the response. We always reply with a generic
+   { ok: true } so the endpoint can't be used to discover which usernames/emails
+   exist. Codes are stored in Supabase (password_reset_codes) for 10 minutes so
+   the flow survives across stateless serverless invocations. */
 router.post("/auth/forgot-password", async (req, res) => {
   const { identifier } = req.body as { identifier?: string };
   const id = (identifier || "").trim();
   if (!id) { res.status(400).json({ error: "Please enter your username or email" }); return; }
   const db = getSupabase();
-  let { data } = await db.from("school_users").select("id, username, name, email").eq("username", id).limit(1).maybeSingle();
-  if (!data) ({ data } = await db.from("school_users").select("id, username, name, email").eq("email", id).limit(1).maybeSingle());
-  if (!data) { res.status(404).json({ error: "No account found with that username or email" }); return; }
-  const u = data as { id: number; username: string; name: string; email: string };
+  let { data } = await db.from("school_users").select("id, username, name, email, is_active").eq("username", id).limit(1).maybeSingle();
+  if (!data) ({ data } = await db.from("school_users").select("id, username, name, email, is_active").eq("email", id).limit(1).maybeSingle());
+
+  // Generic response used for every "we can't/​won't send" branch to avoid leaking account existence.
+  const generic = { ok: true };
+
+  if (!data) { res.json(generic); return; }
+  const u = data as { id: number; username: string; name: string; email: string; is_active?: boolean };
+  // Inactive accounts cannot reset their password.
+  if (u.is_active === false) { res.json(generic); return; }
+  // No address on file → nothing to email; respond generically (and log for staff follow-up).
+  if (!u.email) { logger.warn({ username: u.username }, "Password reset requested but no email on file"); res.json(generic); return; }
+
   const code = genResetCode();
   const nowIso = new Date().toISOString();
   // Opportunistically clear expired codes so the table stays small.
@@ -147,28 +162,72 @@ router.post("/auth/forgot-password", async (req, res) => {
     username_key: u.username.toLowerCase(),
     user_id: u.id,
     code,
+    attempts: 0,
     expires_at: new Date(Date.now() + RESET_TTL_MS).toISOString(),
     created_at: nowIso,
   }, { onConflict: "username_key" });
   if (error) { res.status(500).json({ error: "Could not start password reset. Please try again." }); return; }
-  res.json({ ok: true, username: u.username, name: u.name, code });
+
+  if (isEmailConfigured()) {
+    try {
+      await sendResetCodeEmail(u.email, u.name, code);
+    } catch (e) {
+      logger.error({ err: e, username: u.username }, "Failed to send reset code email");
+      res.status(500).json({ error: "We couldn't send your reset email. Please try again later." }); return;
+    }
+  } else if (process.env["NODE_ENV"] === "production") {
+    // In production we must never fall back to exposing the code.
+    logger.error("Password reset requested but email is not configured (RESEND_API_KEY missing)");
+    res.status(500).json({ error: "Password reset is temporarily unavailable. Please contact an administrator." }); return;
+  } else {
+    // Dev convenience only: surface the code in server logs (never in the HTTP response).
+    logger.warn({ username: u.username, code }, "Email not configured — reset code logged for local dev only");
+  }
+
+  res.json(generic);
 });
 
 router.post("/auth/reset-password", async (req, res) => {
   const { identifier, code, newPassword } = req.body as { identifier?: string; code?: string; newPassword?: string };
-  const key = (identifier || "").trim().toLowerCase();
+  const idRaw = (identifier || "").trim();
   const c = (code || "").trim();
-  if (!key || !c || !newPassword) { res.status(400).json({ error: "All fields are required" }); return; }
+  if (!idRaw || !c || !newPassword) { res.status(400).json({ error: "All fields are required" }); return; }
   if (newPassword.length < 6) { res.status(400).json({ error: "New password must be at least 6 characters" }); return; }
   const db = getSupabase();
-  const { data: entry } = await db.from("password_reset_codes").select("code, expires_at, user_id").eq("username_key", key).maybeSingle();
-  const row = entry as { code: string; expires_at: string; user_id: number } | null;
-  if (!row || new Date(row.expires_at).getTime() < Date.now()) {
-    await db.from("password_reset_codes").delete().eq("username_key", key);
-    res.status(400).json({ error: "Your code has expired. Please request a new one." }); return;
+
+  // Resolve the account from a username OR email so the code key (canonical username) is correct.
+  let { data: userRow } = await db.from("school_users").select("id, username, is_active").eq("username", idRaw).limit(1).maybeSingle();
+  if (!userRow) ({ data: userRow } = await db.from("school_users").select("id, username, is_active").eq("email", idRaw).limit(1).maybeSingle());
+
+  const genericErr = "Your code is invalid or has expired. Please request a new one.";
+  if (!userRow) { res.status(400).json({ error: genericErr }); return; }
+  const usr = userRow as { id: number; username: string; is_active?: boolean };
+  if (usr.is_active === false) { res.status(403).json({ error: "This account has been deactivated. Please contact an administrator." }); return; }
+
+  const key = usr.username.toLowerCase();
+  // Verify the code and account for the attempt ATOMICALLY in the DB. A plain
+  // read-then-write increment races under concurrent requests (parallel wrong
+  // guesses read the same count and overwrite each other), which would let an
+  // attacker exceed MAX_RESET_ATTEMPTS. The SQL function locks the row
+  // (SELECT ... FOR UPDATE) so concurrent attempts serialize. See
+  // supabase/migrations/015_reset_code_atomic_claim.sql.
+  const { data: claimRows, error: claimErr } = await db.rpc("claim_password_reset_attempt", {
+    p_username_key: key,
+    p_code: c,
+    p_max: MAX_RESET_ATTEMPTS,
+  });
+  if (claimErr) { res.status(500).json({ error: "Could not reset your password. Please try again." }); return; }
+  const claim = (Array.isArray(claimRows) ? claimRows[0] : claimRows) as
+    | { status: string; out_user_id: number | null; out_remaining: number | null }
+    | undefined;
+  if (!claim || claim.status === "invalid") { res.status(400).json({ error: genericErr }); return; }
+  if (claim.status === "locked") { res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." }); return; }
+  if (claim.status === "wrong") {
+    const remaining = claim.out_remaining ?? 0;
+    res.status(400).json({ error: `Incorrect code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.` }); return;
   }
-  if (row.code !== c) { res.status(400).json({ error: "Incorrect code. Please check and try again." }); return; }
-  const { error } = await db.from("school_users").update({ password: newPassword }).eq("id", row.user_id);
+  // status === "ok": the code matched. Update the password, then delete the code.
+  const { error } = await db.from("school_users").update({ password: newPassword }).eq("id", usr.id);
   if (error) { res.status(500).json({ error: "Could not reset your password. Please try again." }); return; }
   await db.from("password_reset_codes").delete().eq("username_key", key);
   res.json({ ok: true });

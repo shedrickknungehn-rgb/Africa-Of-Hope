@@ -34,23 +34,6 @@ export const ALL_ROLES: Role[] = [
   "finance_officer", "hr_officer", "instructor", "assistant", "student", "alumni", "parent",
 ];
 
-export interface DemoAccount { role: Role; username: string; password: string; name: string; }
-
-/* Convenience logins shown on the sign-in screen. These must stay in sync with
-   supabase/migrations/011_demo_users.sql (and 010 for the super admin). */
-export const DEMO_ACCOUNTS: DemoAccount[] = [
-  { role: "super_admin", username: "superadmin", password: "SuperAdmin2026", name: "Super Administrator" },
-  { role: "director", username: "director", password: "Demo2026", name: "Daniel Director" },
-  { role: "registrar", username: "registrar", password: "Demo2026", name: "Rita Registrar" },
-  { role: "academic_coordinator", username: "coordinator", password: "Demo2026", name: "Cora Coordinator" },
-  { role: "finance_officer", username: "finance", password: "Demo2026", name: "Felix Finance" },
-  { role: "hr_officer", username: "hr", password: "Demo2026", name: "Hana Human-Resource" },
-  { role: "instructor", username: "instructor", password: "Demo2026", name: "Ian Instructor" },
-  { role: "assistant", username: "assistant", password: "Demo2026", name: "Amy Assistant" },
-  { role: "student", username: "student", password: "Demo2026", name: "Sam Student" },
-  { role: "parent", username: "parent", password: "Demo2026", name: "Pat Parent" },
-];
-
 export interface User {
   id: string; username: string; password: string;
   name: string; email: string; phone?: string;
@@ -225,13 +208,13 @@ export function clearSession() {
   sessionStorage.removeItem(USER_KEY);
 }
 
-export async function apiForgotPassword(identifier: string): Promise<{ username: string; name: string; code: string }> {
+export async function apiForgotPassword(identifier: string): Promise<{ ok: boolean }> {
   let res: Response;
   try { res = await fetch(`${API}/auth/forgot-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier }) }); }
   catch { throw new Error(UNREACHABLE); }
   const data = await parseJson(res);
   if (!res.ok) throw new Error((data as { error?: string }).error || "Could not start password reset");
-  return data as unknown as { username: string; name: string; code: string };
+  return { ok: true };
 }
 
 export async function apiResetPassword(identifier: string, code: string, newPassword: string): Promise<void> {
