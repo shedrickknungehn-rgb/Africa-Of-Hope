@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Plus, Trash2, Search, X, ClipboardList } from "lucide-react";
+import { Plus, Trash2, Search, X, ClipboardList, Download } from "lucide-react";
 import type { User, Course, Enrollment } from "../schoolApi";
-import { apiCreateEnrollment, apiUpdateEnrollment, apiDeleteEnrollment } from "../schoolApi";
+import { apiCreateEnrollment, apiUpdateEnrollment, apiDeleteEnrollment, apiGetGrades } from "../schoolApi";
 
 interface Props { enrollments: Enrollment[]; users: User[]; courses: Course[]; onRefresh: () => void; }
 
@@ -27,6 +27,7 @@ export default function EnrollmentsTab({ enrollments, users, courses, onRefresh 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const students = users.filter(u => u.role === "student");
 
@@ -51,6 +52,16 @@ export default function EnrollmentsTab({ enrollments, users, courses, onRefresh 
     setUpdating(id);
     try { await apiDeleteEnrollment(id); onRefresh(); }
     catch { /* silent */ } finally { setUpdating(null); }
+  };
+
+  const downloadTranscript = async (e: Enrollment) => {
+    const studentName = e.studentName || users.find(u => u.id === e.studentId)?.name || e.studentId;
+    setDownloading(e.id);
+    try {
+      const grades = await apiGetGrades({ studentId: e.studentId });
+      const { exportTranscriptPdf } = await import("../pdf/exportPdf");
+      exportTranscriptPdf(studentName, grades, courses);
+    } catch { /* silent */ } finally { setDownloading(null); }
   };
 
   const save = async () => {
@@ -115,6 +126,10 @@ export default function EnrollmentsTab({ enrollments, users, courses, onRefresh 
                           {label}
                         </button>
                       ))}
+                      <button onClick={() => downloadTranscript(e)} disabled={downloading === e.id} title="Download transcript PDF"
+                        className="w-6 h-6 rounded-md bg-[#0d3d1a]/10 hover:bg-[#0d3d1a]/20 text-[#0d3d1a] flex items-center justify-center transition-colors disabled:opacity-40">
+                        {downloading === e.id ? <span className="w-3 h-3 border-2 border-[#0d3d1a] border-t-transparent rounded-full animate-spin" /> : <Download className="w-3 h-3" />}
+                      </button>
                       <button onClick={() => del(e.id)} disabled={updating === e.id} className="w-6 h-6 rounded-md bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center transition-colors disabled:opacity-40">
                         <Trash2 className="w-3 h-3" />
                       </button>
