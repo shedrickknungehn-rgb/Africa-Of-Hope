@@ -59,13 +59,12 @@ Non-management: instructor, assistant â†’ InstructorDashboard; student, alumni â
 - All endpoints: `Authorization: Bearer <token>`
 - Management roles get full user list + all CRUD; others get limited access
 
-## Demo Credentials (seeded by seed.ts)
-- admin / AfroAdmin2026, superadmin / SuperAdmin2026, director / Director2026
-- registrar / Registrar2026, coordinator / Coordinator2026, finance / Finance2026, hr / HR2026
-- instructor1 / Instructor2026, assistant1 / Assistant2026
-- student1 / Student2026, student2 / Student2026, alumni1 / Alumni2026
+## Demo Accounts (seeded by seed.ts)
+- Roles seeded: admin, super_admin, director, registrar, academic_coordinator, finance_officer, hr_officer, instructor, assistant, student (x2), alumni
+- Credentials are visible to admins via the Users tab (show/hide password feature); not stored in memory.
+- Run `artifacts/api-server/src/seed.ts` or `supabase/seed.sql` to populate; see `supabase/README.md` for steps.
 
-**Why plaintext passwords:** AdminDashboard Users tab has show/hide password for admins to share credentials. Internal portal only.
+**Why plaintext passwords in DB:** AdminDashboard Users tab has show/hide password for admins to share credentials with enrolled students. Internal portal only.
 
 ## CRITICAL: Migrations must be run in Supabase before tables work
 - Migration 006: role/status ENUMs to TEXT + Phase 1 tables
