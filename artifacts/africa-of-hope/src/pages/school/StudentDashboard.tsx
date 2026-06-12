@@ -607,17 +607,7 @@ function QuizTaker({ quiz, userId, onDone, onCancel }: {
   const [err, setErr] = useState("");
   const [timeLeft, setTimeLeft] = useState(quiz.timeLimitMins > 0 ? quiz.timeLimitMins * 60 : null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (timeLeft === null) return;
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t === null || t <= 1) { clearInterval(timerRef.current!); submit(true); return 0; }
-        return t - 1;
-      });
-    }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, []);
+  const submitRef = useRef<(auto?: boolean) => void>(() => {});
 
   const submit = async (auto = false) => {
     if (submitting) return;
@@ -627,6 +617,19 @@ function QuizTaker({ quiz, userId, onDone, onCancel }: {
       onDone(res.score, res.maxScore);
     } catch (e) { setErr(e instanceof Error ? e.message : "Submit failed"); setSubmitting(false); }
   };
+
+  submitRef.current = submit;
+
+  useEffect(() => {
+    if (timeLeft === null) return;
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t === null || t <= 1) { clearInterval(timerRef.current!); submitRef.current(true); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 

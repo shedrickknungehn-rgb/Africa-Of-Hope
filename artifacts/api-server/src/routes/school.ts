@@ -871,8 +871,8 @@ router.get("/quizzes", requireAuth, async (req: AuthRequest, res) => {
   const role = req.user!.role;
   const uid = String(req.user!.id);
   let q = db.from("school_quizzes").select("*");
-  if (!MGMT.has(role)) {
-    if (role === "instructor" || role === "assistant") {
+  if (!MGMT.has(role) && role !== "assistant") {
+    if (role === "instructor") {
       const { data: courses } = await db.from("school_courses").select("id").eq("instructor_id", uid);
       const ids = (courses ?? []).map((c: { id: string }) => c.id);
       if (ids.length === 0) { res.json([]); return; }
@@ -888,6 +888,7 @@ router.get("/quizzes", requireAuth, async (req: AuthRequest, res) => {
   if (error) throw error;
   const cm = await buildCourseMap();
   const isStudent = !MGMT.has(role) && role !== "instructor" && role !== "assistant";
+
   res.json(((data ?? []) as DbQuiz[]).map((quiz) => fmtQuiz(quiz, cm, isStudent)));
 });
 
@@ -954,7 +955,8 @@ router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) =>
   if (!quizData) { res.status(404).json({ error: "Quiz not found" }); return; }
   const quiz = quizData as DbQuiz;
   if (quiz.status !== "published") { res.status(403).json({ error: "Quiz is not published" }); return; }
-  if (!MGMT.has(role) && role !== "instructor" && role !== "assistant") {
+  const isLearner = !MGMT.has(role) && role !== "instructor" && role !== "assistant";
+  if (isLearner) {
     const { data: enr } = await db.from("school_enrollments").select("id").eq("student_id", uid).eq("course_id", quiz.course_id).neq("status", "withdrawn").limit(1).maybeSingle();
     if (!enr) { res.status(403).json({ error: "Not enrolled in this course" }); return; }
   }
@@ -971,7 +973,7 @@ router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) =>
     submitted_at: new Date().toISOString(),
   }).select().single();
   if (sErr) throw sErr;
-  if (maxScore > 0) {
+  if (isLearner && maxScore > 0) {
     try {
       await db.from("school_grades").insert({
         id: genId(), student_id: uid, course_id: quiz.course_id,
