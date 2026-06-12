@@ -371,16 +371,23 @@ router.get("/payments", requireAuth, async (req: AuthRequest, res) => {
   const role = req.user!.role;
   const uid = String(req.user!.id);
   let q = db.from("school_payments").select("*");
-  if (role === "parent") {
-    const childIds = req.query["studentId"]
-      ? [String(req.query["studentId"])]
-      : await getChildIds(db, uid);
+  if (STAFF.has(role)) {
+    // Staff/management: optional filter by studentId
+    if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+  } else if (role === "parent") {
+    // Parent: resolve all linked children from DB first, then verify any requested studentId
+    const allChildIds = await getChildIds(db, uid);
+    let childIds = allChildIds;
+    if (req.query["studentId"]) {
+      const requestedId = String(req.query["studentId"]);
+      if (!allChildIds.includes(requestedId)) { res.status(403).json({ error: "Forbidden" }); return; }
+      childIds = [requestedId];
+    }
     if (childIds.length === 0) { res.json([]); return; }
     q = q.in("student_id", childIds);
-  } else if (!STAFF.has(role) && role !== "student" && role !== "alumni") {
-    q = q.eq("student_id", uid);
   } else {
-    if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+    // Student/alumni and all other roles: always forced to own records only
+    q = q.eq("student_id", uid);
   }
   if (req.query["status"]) q = q.eq("status", String(req.query["status"]));
   const { data, error } = await q.order("created_at", { ascending: false });
@@ -422,14 +429,21 @@ router.get("/attendance", requireAuth, async (req: AuthRequest, res) => {
   const uid = String(req.user!.id);
   let q = db.from("school_attendance").select("*");
   if (STAFF.has(role)) {
+    // Staff/management: optional filter by studentId
     if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
   } else if (role === "parent") {
-    const childIds = req.query["studentId"]
-      ? [String(req.query["studentId"])]
-      : await getChildIds(db, uid);
+    // Parent: resolve all linked children from DB first, then verify any requested studentId
+    const allChildIds = await getChildIds(db, uid);
+    let childIds = allChildIds;
+    if (req.query["studentId"]) {
+      const requestedId = String(req.query["studentId"]);
+      if (!allChildIds.includes(requestedId)) { res.status(403).json({ error: "Forbidden" }); return; }
+      childIds = [requestedId];
+    }
     if (childIds.length === 0) { res.json([]); return; }
     q = q.in("student_id", childIds);
   } else {
+    // Student/alumni: always forced to own records only
     q = q.eq("student_id", uid);
   }
   if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
@@ -471,14 +485,21 @@ router.get("/grades", requireAuth, async (req: AuthRequest, res) => {
   const uid = String(req.user!.id);
   let q = db.from("school_grades").select("*");
   if (STAFF.has(role)) {
+    // Staff/management: optional filter by studentId
     if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
   } else if (role === "parent") {
-    const childIds = req.query["studentId"]
-      ? [String(req.query["studentId"])]
-      : await getChildIds(db, uid);
+    // Parent: resolve all linked children from DB first, then verify any requested studentId
+    const allChildIds = await getChildIds(db, uid);
+    let childIds = allChildIds;
+    if (req.query["studentId"]) {
+      const requestedId = String(req.query["studentId"]);
+      if (!allChildIds.includes(requestedId)) { res.status(403).json({ error: "Forbidden" }); return; }
+      childIds = [requestedId];
+    }
     if (childIds.length === 0) { res.json([]); return; }
     q = q.in("student_id", childIds);
   } else {
+    // Student/alumni: always forced to own records only
     q = q.eq("student_id", uid);
   }
   if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
