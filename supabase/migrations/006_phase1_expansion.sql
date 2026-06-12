@@ -12,6 +12,9 @@ ALTER TABLE school_users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''
 ALTER TABLE school_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- ─── Expand course status (convert enum to TEXT) ──────────────
+-- Drop the RLS policy that references status so the column type can change;
+-- it is recreated at the end of this migration against the TEXT column.
+DROP POLICY IF EXISTS "anon_read_active_courses" ON school_courses;
 ALTER TABLE school_courses ALTER COLUMN status TYPE TEXT USING status::TEXT;
 DROP TYPE IF EXISTS course_status CASCADE;
 ALTER TABLE school_courses ADD COLUMN IF NOT EXISTS capacity INTEGER DEFAULT 30;
@@ -68,13 +71,9 @@ CREATE TABLE IF NOT EXISTS school_payments (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── Seed demo users for all 9 roles ─────────────────────────
-INSERT INTO school_users (username, password, name, email, role) VALUES
-  ('superadmin',   'SuperAdmin2026',   'Super Administrator',    'superadmin@aoh.edu.lr',   'super_admin'),
-  ('director',     'Director2026',     'Dr. James Kollie',       'director@aoh.edu.lr',     'director'),
-  ('registrar',    'Registrar2026',    'Mary Johnson',           'registrar@aoh.edu.lr',    'registrar'),
-  ('coordinator',  'Coordinator2026',  'Prof. Samuel Doe',       'coordinator@aoh.edu.lr',  'academic_coordinator'),
-  ('finance',      'Finance2026',      'Alice Freeman',          'finance@aoh.edu.lr',      'finance_officer'),
-  ('hr',           'HR2026',           'Robert Brown',           'hr@aoh.edu.lr',           'hr_officer'),
-  ('alumni1',      'Alumni2026',       'Grace Wesseh',           'grace@alumni.aoh.edu.lr', 'alumni')
-ON CONFLICT (username) DO NOTHING;
+-- ─── Recreate the course read policy against the now-TEXT column ─
+CREATE POLICY "anon_read_active_courses"
+  ON school_courses
+  FOR SELECT
+  TO anon, authenticated
+  USING (status = 'active');

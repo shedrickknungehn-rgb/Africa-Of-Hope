@@ -59,18 +59,21 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 - All endpoints: `Authorization: Bearer <token>`
 - Management roles get full user list + all CRUD; others get limited access
 
-## Auth model: first-run Super Admin setup (NO demo accounts)
-- Demo seeding REMOVED — `seed.ts` is a no-op. Demo rows are cleared by `supabase/migrations/009_remove_demo_data.sql` (deletes all school_* + parent_student_links; leaves contact_submissions/donations untouched).
+## Auth model: seeded Super Admin + first-run setup fallback
+- `010_superadmin.sql` seeds exactly ONE `super_admin` login (runs AFTER 009 so it survives the wipe). The demo credential lives in that migration file (intentional — user asked for a superadmin demo login). Because a super_admin exists, `setup-status` returns `needsSetup:false` → normal login screen.
+- The earlier "remove demo data" seed block was deleted from 006; user seeding now lives ONLY in 010. `seed.ts` is still a no-op.
+- `009_remove_demo_data.sql` clears all school_* rows + parent_student_links (leaves contact_submissions/donations). Guarded by `to_regclass`, so it safely skips tables that don't exist yet.
 - `SchoolLogin.tsx` calls `GET /api/school/auth/setup-status` on mount → `{needsSetup}` (true when no super_admin row). True → "Create Super Administrator" form → `POST /api/school/auth/setup` (creates first super_admin only; 403 if one already exists). False → normal login.
-- To re-trigger setup on any DB: ensure no super_admin row exists (run migration 009).
+- Login = `username` + plaintext `password` compare. To force the first-run setup flow instead: run 009 and skip 010 (leave no super_admin row).
 
 **Why plaintext passwords in DB:** AdminDashboard Users tab has show/hide password for admins to share credentials with enrolled students. Internal portal only.
 
-## CRITICAL: Migrations must be run in Supabase before tables work
-- Migration 006: role/status ENUMs to TEXT + Phase 1 tables
-- Migration 007: Phase 2 tables (attendance, grades, staff, leave, payroll)
-- Migration 008: Phase 3 tables (messaging, timetable, exams, quizzes, parent_links, books, borrows)
-Run all in: Supabase Dashboard → SQL Editor → paste entire file → Run
+## Applying migrations to Supabase from Replit (use the Management API)
+- **Method that works:** POST `https://api.supabase.com/v1/projects/<ref>/database/query`, header `Authorization: Bearer $SUPABASE_ACCESS_TOKEN`, body `{"query":"<sql>"}`. `<ref>` = subdomain of `SUPABASE_URL`. Supabase SQL Editor is the manual fallback.
+- **Why not `psql`/`pg` from Replit:** direct host `db.<ref>.supabase.co` is **IPv6-only → ENOTFOUND**. The session pooler (`aws-0-<region>.pooler.supabase.com`, user `postgres.<ref>`) is reachable but auth failed `28P01` (stored DB password was wrong, user-side). The Management API (PAT) sidesteps both.
+- **Each API call wraps the whole file's SQL in ONE transaction** — any single error rolls back the entire file. (006's enum ALTER failing reverted ALL of 006's tables/columns.)
+- **Enum→TEXT + RLS gotcha:** Postgres refuses `ALTER COLUMN ... TYPE` while an RLS policy references that column. 002 creates `anon_read_active_courses` on `school_courses.status`; 006 now DROPs it before the ALTER and recreates it after. Any future enum→text conversion must drop dependent policies first.
+- **Order:** 001 schema, 002 rls, 003 realtime, 004 storage, 005 functions, 006 phase1 (schema only now), 007 phase2, 008 phase3, 009 clears demo data, 010 seeds the superadmin.
 
 ## Phase 2 access-control convention (school.ts) — KEEP CONSISTENT
 **Why:** academic records and payroll are sensitive; an early version let any logged-in user read/write any student's data (IDOR).
