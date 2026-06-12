@@ -46,4 +46,11 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api", router);
 
+// JSON error handler — must be last
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const message = err instanceof Error ? err.message : "Internal server error";
+  const status = (err as { status?: number }).status ?? 500;
+  res.status(status).json({ error: message });
+});
+
 export default app;
