@@ -104,10 +104,10 @@ export default function SchoolLogin() {
           {/* Header */}
           <div className="text-center mb-6">
             <div className="rounded-2xl px-6 py-4 inline-block shadow-2xl mb-4 bg-[#000000]">
-              <img src="/school-logo.png" alt="Africa of Hope Inc" className="h-16 sm:h-20 w-auto object-contain" />
+              <img src="/school-logo.png" alt="Africa of Hope Inc" className="h-16 sm:h-20 w-auto object-contain ml-[0px] mr-[0px] mt-[0px] mb-[0px] pl-[0px] pr-[0px] rounded-tl-[0px] rounded-tr-[0px] rounded-br-[0px] rounded-bl-[0px]" />
             </div>
-            <p className="text-[#d4a017] font-bold text-sm tracking-widest uppercase mt-1">School Management System</p>
-            <p className="text-white/40 text-xs mt-1">RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia</p>
+            <p className="text-[#d4a017] font-bold text-sm tracking-widest uppercase mt-1">School PORTAL</p>
+            <p className="text-white/40 text-xs mt-1 text-center">RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia</p>
           </div>
 
           {/* Main card */}
