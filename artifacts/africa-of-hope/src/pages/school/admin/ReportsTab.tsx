@@ -7,7 +7,7 @@ import {
   TrendingUp, Users, BookOpen, ClipboardList, DollarSign, RefreshCw,
   Download, GraduationCap, Briefcase, Activity, CalendarCheck,
 } from "lucide-react";
-import type { User, Course, Enrollment, Payment, ReportOverview, Attendance, Grade, Payroll, StaffRecord, LeaveRequest } from "../schoolApi";
+import type { User, Course, Enrollment, Payment, ReportOverview, Attendance, Grade, Payroll, StaffRecord, LeaveRequest, AcademicReport, FinanceReport, HRReport, AttendanceReport } from "../schoolApi";
 import { ROLE_LABELS } from "../schoolApi";
 
 interface Props {
@@ -15,6 +15,10 @@ interface Props {
   users: User[]; courses: Course[]; enrollments: Enrollment[]; payments: Payment[];
   attendance: Attendance[]; grades: Grade[]; payroll: Payroll[]; staff: StaffRecord[];
   leave: LeaveRequest[];
+  academicReport: AcademicReport | null;
+  financeReport: FinanceReport | null;
+  hrReport: HRReport | null;
+  attendanceReport: AttendanceReport | null;
 }
 
 const GREEN = "#1a6b2a";
@@ -130,7 +134,8 @@ function Tip({ active, payload, label }: { active?: boolean; payload?: { name: s
 }
 
 /* ─── Main component ──────────────────────────────────────────── */
-export default function ReportsTab({ report, users, courses, enrollments, payments, attendance, grades, payroll, staff, leave }: Props) {
+export default function ReportsTab({ report, users, courses, enrollments, payments, attendance, grades, payroll, staff, leave, academicReport, financeReport: _fr, hrReport, attendanceReport: _ar }: Props) {
+  void _fr; void _ar;
   const [section, setSection] = useState<ReportSection>("overview");
 
   /* ── Enrollment trend (last 6 months) ── */
@@ -679,69 +684,86 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
         <div className="space-y-5">
           <div className="flex justify-end"><CsvBtn onClick={csvAcademic} /></div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KPI label="Attendance Rate" value={`${overallAttRate}%`} icon={Activity} color="#3b82f6" sub={`${attendance.length} records`} />
             <KPI label="Average Grade" value={`${avgGrade}%`} icon={GraduationCap} color={GREEN} sub={`${grades.length} assessments`} />
             <KPI label="Courses" value={report.activeCourses} icon={BookOpen} color={DARK} sub="active" />
             <KPI label="Active Students" value={report.totalStudents} icon={Users} color={GOLD} />
+            <KPI label="Enrollments" value={report.totalEnrollments} icon={ClipboardList} color="#3b82f6" sub={`${report.activeEnrollments} active`} />
           </div>
           <div className="grid lg:grid-cols-2 gap-4">
-            <Card title="Attendance Rate by Course" icon={Activity} iconColor="#3b82f6">
-              {attendByCourse.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(180, attendByCourse.length * 32)}>
-                  <BarChart data={attendByCourse} layout="vertical" margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
-                    <XAxis type="number" tick={{ fontSize: 9 }} domain={[0, 100]} unit="%" />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fontWeight: 600 }} width={120} />
-                    <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
-                    <Bar dataKey="rate" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Attendance %" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <NoData />}
+            {/* Enrollment Trend — Line chart by month */}
+            <Card title="Enrollment Trend (Last 6 Months)" icon={TrendingUp} iconColor={GREEN}>
+              {(() => {
+                const data = academicReport?.enrollmentTrend ?? enrollTrend.map(d => ({ month: d.month, count: d.enrollments }));
+                return data.some(d => d.count > 0) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                      <XAxis dataKey="month" tick={{ fontSize: 10, fontWeight: 600 }} />
+                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
+                      <Line type="monotone" dataKey="count" stroke={GREEN} strokeWidth={2.5} dot={{ fill: GREEN, r: 3 }} name="Enrollments" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : <NoData />;
+              })()}
             </Card>
-            <Card title="Grade Distribution" icon={GraduationCap} iconColor={GREEN}>
-              {grades.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={gradeDist} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 8, fontWeight: 600 }} />
-                    <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                    <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
-                    <Bar dataKey="count" name="Students" radius={[4, 4, 0, 0]}>
-                      {gradeDist.map((d, i) => (
-                        <Cell key={i} fill={d.name.startsWith("A") ? GREEN : d.name.startsWith("B") ? "#4ade80" : d.name.startsWith("C") ? GOLD : d.name.startsWith("D") ? "#f97316" : "#ef4444"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <NoData />}
-            </Card>
+            {/* Grade Distribution by Course — Bar chart */}
             <Card title="Average Grade by Course" icon={BookOpen} iconColor={GREEN}>
-              {avgByCourse.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(180, avgByCourse.length * 32)}>
-                  <BarChart data={avgByCourse} layout="vertical" margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
-                    <XAxis type="number" tick={{ fontSize: 9 }} domain={[0, 100]} unit="%" />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fontWeight: 600 }} width={120} />
-                    <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
-                    <Bar dataKey="avg" fill={GREEN} radius={[0, 4, 4, 0]} name="Avg Grade %" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : <NoData />}
+              {(() => {
+                const data = academicReport?.gradesByCourse ?? avgByCourse.map(d => ({ course: d.name, avg: d.avg }));
+                return data.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={Math.max(180, data.length * 32)}>
+                    <BarChart data={data} layout="vertical" margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
+                      <XAxis type="number" tick={{ fontSize: 9 }} domain={[0, 100]} unit="%" />
+                      <YAxis type="category" dataKey="course" tick={{ fontSize: 9, fontWeight: 600 }} width={120} />
+                      <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
+                      <Bar dataKey="avg" fill={GREEN} radius={[0, 4, 4, 0]} name="Avg Grade %" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <NoData />;
+              })()}
             </Card>
-            <Card title="Attendance Status Breakdown" icon={Activity} iconColor="#3b82f6">
-              {attendance.length > 0 ? (() => {
-                const counts = attendance.reduce<Record<string, number>>((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {});
-                const data = Object.entries(counts).map(([name, value]) => ({ name, value }));
-                const colors: Record<string, string> = { present: GREEN, absent: "#ef4444", late: GOLD, excused: "#3b82f6" };
-                return (
+            {/* Pass / Fail Ratio — Pie chart */}
+            <Card title="Pass / Fail Ratio" icon={GraduationCap} iconColor={GREEN}>
+              {(() => {
+                const data = academicReport?.passFail ?? (() => {
+                  let pass = 0, fail = 0;
+                  grades.forEach(g => { const pct = parseFloat(g.maxScore) > 0 ? (parseFloat(g.score) / parseFloat(g.maxScore)) * 100 : 0; if (pct >= 50) pass++; else fail++; });
+                  return [{ name: "Pass", value: pass }, { name: "Fail", value: fail }];
+                })();
+                const total = data.reduce((s, d) => s + d.value, 0);
+                return total > 0 ? (
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie data={data} cx="50%" cy="50%" outerRadius={80} dataKey="value" nameKey="name"
-                        label={({ name, value }) => `${name}: ${value}`} labelLine={false} fontSize={9}>
-                        {data.map((d, i) => <Cell key={i} fill={colors[d.name] || PIE_COLORS[i]} />)}
+                        label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`} labelLine={false} fontSize={9}>
+                        <Cell fill={GREEN} />
+                        <Cell fill="#ef4444" />
                       </Pie>
                       <Tooltip contentStyle={TOOLTIP_STYLE} />
                     </PieChart>
                   </ResponsiveContainer>
-                );
-              })() : <NoData />}
+                ) : <NoData />;
+              })()}
+            </Card>
+            {/* Grade band distribution */}
+            <Card title="Grade Distribution (Bands)" icon={GraduationCap} iconColor={GOLD}>
+              {(() => {
+                const data = academicReport?.gradeByBand ?? gradeDist.map(d => ({ band: d.name, count: d.count }));
+                return data.some(d => d.count > 0) ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                      <XAxis dataKey="band" tick={{ fontSize: 8, fontWeight: 600 }} />
+                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
+                      <Bar dataKey="count" name="Students" radius={[4, 4, 0, 0]}>
+                        {data.map((d, i) => (
+                          <Cell key={i} fill={d.band.startsWith("A") ? GREEN : d.band.startsWith("B") ? "#4ade80" : d.band.startsWith("C") ? GOLD : d.band.startsWith("D") ? "#f97316" : "#ef4444"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <NoData />;
+              })()}
             </Card>
           </div>
         </div>
@@ -833,18 +855,20 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
                 </ResponsiveContainer>
               ) : <NoData />}
             </Card>
-            <Card title="Staff by Department" icon={Briefcase} iconColor={DARK}>
-              {staffByDept.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={staffByDept} cx="50%" cy="50%" outerRadius={80} dataKey="value" nameKey="name"
-                      label={({ name, value }) => `${name}: ${value}`} labelLine={false} fontSize={9}>
-                      {staffByDept.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : <NoData />}
+            <Card title="Headcount by Department" icon={Briefcase} iconColor={DARK}>
+              {(() => {
+                const data = hrReport?.headcountByDept ?? staffByDept.map(d => ({ dept: d.name, count: d.value }));
+                return data.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={Math.max(180, data.length * 40)}>
+                    <BarChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                      <XAxis dataKey="dept" tick={{ fontSize: 9, fontWeight: 600 }} />
+                      <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                      <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
+                      <Bar dataKey="count" fill={DARK} radius={[4, 4, 0, 0]} name="Staff" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <NoData />;
+              })()}
             </Card>
             <Card title="Payroll by Status" icon={DollarSign} iconColor={GOLD}>
               {payroll.length > 0 ? (() => {

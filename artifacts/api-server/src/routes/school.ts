@@ -1254,5 +1254,137 @@ router.delete("/borrows/:id", requireAuth, requireMgmt, async (req, res) => {
   res.status(204).send();
 });
 
+/* ─── Report: Academic ───────────────────────────────────────── */
+router.get("/reports/academic", requireAuth, requireMgmt, async (_req, res) => {
+  const db = getSupabase();
+  const [{ data: enrollments }, { data: grades }, { data: courses }] = await Promise.all([
+    db.from("school_enrollments").select("id, enrolled_at, created_at"),
+    db.from("school_grades").select("id, course_id, score, max_score"),
+    db.from("school_courses").select("id, title"),
+  ]);
+  const courseMap = new Map<string, string>((courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]));
+  const now = new Date();
+  const months: Record<string, { label: string; count: number }> = {};
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months[k] = { label: d.toLocaleString("default", { month: "short", year: "2-digit" }), count: 0 };
+  }
+  (enrollments ?? []).forEach((e: { enrolled_at?: string; created_at: string }) => {
+    const k = (e.enrolled_at || e.created_at || "").slice(0, 7);
+    if (k in months) months[k].count++;
+  });
+  const enrollmentTrend = Object.values(months).map(m => ({ month: m.label, count: m.count }));
+  const gradesBandCount: Record<string, number> = { "A (90-100)": 0, "B (75-89)": 0, "C (60-74)": 0, "D (50-59)": 0, "F (<50)": 0 };
+  let pass = 0, fail = 0;
+  const byCourse: Record<string, { total: number; count: number; title: string }> = {};
+  (grades ?? []).forEach((g: { course_id: string; score: string; max_score: string }) => {
+    const pct = parseFloat(g.max_score) > 0 ? (parseFloat(g.score) / parseFloat(g.max_score)) * 100 : 0;
+    if (pct >= 90) gradesBandCount["A (90-100)"]++;
+    else if (pct >= 75) gradesBandCount["B (75-89)"]++;
+    else if (pct >= 60) gradesBandCount["C (60-74)"]++;
+    else if (pct >= 50) gradesBandCount["D (50-59)"]++;
+    else gradesBandCount["F (<50)"]++;
+    if (pct >= 50) pass++; else fail++;
+    if (!byCourse[g.course_id]) byCourse[g.course_id] = { total: 0, count: 0, title: courseMap.get(g.course_id) || g.course_id };
+    byCourse[g.course_id].total += pct;
+    byCourse[g.course_id].count++;
+  });
+  const gradeByBand = Object.entries(gradesBandCount).map(([band, count]) => ({ band, count }));
+  const passFail = [{ name: "Pass", value: pass }, { name: "Fail", value: fail }];
+  const gradesByCourse = Object.values(byCourse)
+    .map(c => ({ course: c.title.length > 22 ? c.title.slice(0, 20) + "…" : c.title, avg: Math.round(c.total / c.count) }))
+    .sort((a, b) => b.avg - a.avg).slice(0, 8);
+  res.json({ enrollmentTrend, gradeByBand, passFail, gradesByCourse });
+});
+
+/* ─── Report: Finance ────────────────────────────────────────── */
+router.get("/reports/finance", requireAuth, requireMgmt, async (_req, res) => {
+  const db = getSupabase();
+  const { data: payments } = await db.from("school_payments").select("id, amount, status, paid_at, created_at");
+  const numFn = (s: string) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
+  const now = new Date();
+  const months: Record<string, { label: string; revenue: number }> = {};
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months[k] = { label: d.toLocaleString("default", { month: "short", year: "2-digit" }), revenue: 0 };
+  }
+  const all = (payments ?? []) as { status: string; amount: string; paid_at: string | null; created_at: string }[];
+  all.filter(p => p.status === "paid" && p.paid_at).forEach(p => {
+    const k = (p.paid_at!).slice(0, 7);
+    if (k in months) months[k].revenue += numFn(p.amount);
+  });
+  const revenueTrend = Object.values(months).map(m => ({ month: m.label, revenue: parseFloat(m.revenue.toFixed(2)) }));
+  const statusCounts: Record<string, number> = {};
+  all.forEach(p => { statusCounts[p.status] = (statusCounts[p.status] || 0) + 1; });
+  const paymentStatus = Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
+  const totalCollected = all.filter(p => p.status === "paid").reduce((s, p) => s + numFn(p.amount), 0);
+  const totalOutstanding = all.filter(p => p.status === "pending" || p.status === "overdue").reduce((s, p) => s + numFn(p.amount), 0);
+  res.json({ revenueTrend, paymentStatus, totalCollected: parseFloat(totalCollected.toFixed(2)), totalOutstanding: parseFloat(totalOutstanding.toFixed(2)) });
+});
+
+/* ─── Report: HR ─────────────────────────────────────────────── */
+router.get("/reports/hr", requireAuth, requireMgmt, async (_req, res) => {
+  const db = getSupabase();
+  const [{ data: staff }, { data: leave }, { data: payroll }] = await Promise.all([
+    db.from("school_staff_records").select("id, department"),
+    db.from("school_leave_requests").select("id, type, status"),
+    db.from("school_payroll").select("id, period, gross, net"),
+  ]);
+  const numFn = (s: string) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
+  const deptCounts: Record<string, number> = {};
+  (staff ?? []).forEach((s: { department: string }) => { const d = s.department || "Unassigned"; deptCounts[d] = (deptCounts[d] || 0) + 1; });
+  const headcountByDept = Object.entries(deptCounts).map(([dept, count]) => ({ dept, count }));
+  const leaveTypes: Record<string, { approved: number; pending: number; rejected: number }> = {};
+  (leave ?? []).forEach((l: { type: string; status: string }) => {
+    if (!leaveTypes[l.type]) leaveTypes[l.type] = { approved: 0, pending: 0, rejected: 0 };
+    const s = l.status as "approved" | "pending" | "rejected";
+    if (s in leaveTypes[l.type]) leaveTypes[l.type][s]++;
+  });
+  const leaveByType = Object.entries(leaveTypes).map(([type, c]) => ({ type, ...c }));
+  const periodTotals: Record<string, { gross: number; net: number }> = {};
+  (payroll ?? []).forEach((p: { period: string; gross: string; net: string }) => {
+    if (!periodTotals[p.period]) periodTotals[p.period] = { gross: 0, net: 0 };
+    periodTotals[p.period].gross += numFn(p.gross);
+    periodTotals[p.period].net += numFn(p.net);
+  });
+  const payrollByMonth = Object.entries(periodTotals).sort(([a], [b]) => a.localeCompare(b)).slice(-6)
+    .map(([period, v]) => ({ period, gross: parseFloat(v.gross.toFixed(2)), net: parseFloat(v.net.toFixed(2)) }));
+  res.json({ headcountByDept, leaveByType, payrollByMonth });
+});
+
+/* ─── Report: Attendance ─────────────────────────────────────── */
+router.get("/reports/attendance", requireAuth, requireMgmt, async (_req, res) => {
+  const db = getSupabase();
+  const [{ data: attendance }, { data: courses }] = await Promise.all([
+    db.from("school_attendance").select("id, course_id, session_date, status"),
+    db.from("school_courses").select("id, title"),
+  ]);
+  const courseMap = new Map<string, string>((courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]));
+  const byCourse: Record<string, { present: number; total: number; title: string }> = {};
+  (attendance ?? []).forEach((a: { course_id: string; status: string }) => {
+    if (!byCourse[a.course_id]) byCourse[a.course_id] = { present: 0, total: 0, title: courseMap.get(a.course_id) || a.course_id };
+    byCourse[a.course_id].total++;
+    if (a.status === "present" || a.status === "late") byCourse[a.course_id].present++;
+  });
+  const ratesByCourse = Object.values(byCourse)
+    .map(c => ({ course: c.title.length > 22 ? c.title.slice(0, 20) + "…" : c.title, rate: c.total > 0 ? Math.round((c.present / c.total) * 100) : 0 }))
+    .sort((a, b) => b.rate - a.rate).slice(0, 10);
+  const now = new Date();
+  const days: Record<string, { date: string; present: number; absent: number; late: number; excused: number }> = {};
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const k = d.toISOString().slice(0, 10);
+    days[k] = { date: k.slice(5), present: 0, absent: 0, late: 0, excused: 0 };
+  }
+  (attendance ?? []).forEach((a: { session_date: string; status: string }) => {
+    const k = (a.session_date || "").slice(0, 10);
+    if (k in days) (days[k] as Record<string, string | number>)[a.status] = ((days[k] as Record<string, string | number>)[a.status] as number || 0) + 1;
+  });
+  const dailyTrend = Object.values(days);
+  res.json({ ratesByCourse, dailyTrend });
+});
+
 export default router;
 

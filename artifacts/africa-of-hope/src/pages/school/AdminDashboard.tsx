@@ -7,9 +7,11 @@ import {
 import {
   User, Course, LiveSession, Enrollment, Announcement, SchoolEvent, Payment, ReportOverview,
   Attendance, Grade, Payroll, StaffRecord, LeaveRequest,
+  AcademicReport, FinanceReport, HRReport, AttendanceReport,
   apiGetUsers, apiGetCourses, apiGetSessions, apiGetEnrollments,
   apiGetAnnouncements, apiGetEvents, apiGetPayments, apiGetReportOverview,
   apiGetAttendance, apiGetGrades, apiGetPayroll, apiGetStaff, apiGetLeave,
+  apiGetAcademicReport, apiGetFinanceReport, apiGetHRReport, apiGetAttendanceReport,
   clearSession, ROLE_LABELS, ROLE_COLORS,
 } from "./schoolApi";
 import OverviewTab from "./admin/OverviewTab";
@@ -86,6 +88,10 @@ export default function AdminDashboard({ user }: { user: User }) {
   const [payroll, setPayroll] = useState<Payroll[]>([]);
   const [staff, setStaff] = useState<StaffRecord[]>([]);
   const [leave, setLeave] = useState<LeaveRequest[]>([]);
+  const [academicReport, setAcademicReport] = useState<AcademicReport | null>(null);
+  const [financeReport, setFinanceReport] = useState<FinanceReport | null>(null);
+  const [hrReport, setHRReport] = useState<HRReport | null>(null);
+  const [attendanceReport, setAttendanceReport] = useState<AttendanceReport | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -127,14 +133,19 @@ export default function AdminDashboard({ user }: { user: User }) {
 
   const loadAnalytics = useCallback(async () => {
     if (analyticsLoaded) return;
-    const [at, gr, py, st, lv] = await Promise.allSettled([
+    const [at, gr, py, st, lv, ar, fr, hr, atr] = await Promise.allSettled([
       apiGetAttendance(), apiGetGrades(), apiGetPayroll(), apiGetStaff(), apiGetLeave(),
+      apiGetAcademicReport(), apiGetFinanceReport(), apiGetHRReport(), apiGetAttendanceReport(),
     ]);
     if (at.status === "fulfilled") setAttendance(at.value);
     if (gr.status === "fulfilled") setGrades(gr.value);
     if (py.status === "fulfilled") setPayroll(py.value);
     if (st.status === "fulfilled") setStaff(st.value);
     if (lv.status === "fulfilled") setLeave(lv.value);
+    if (ar.status === "fulfilled") setAcademicReport(ar.value);
+    if (fr.status === "fulfilled") setFinanceReport(fr.value);
+    if (hr.status === "fulfilled") setHRReport(hr.value);
+    if (atr.status === "fulfilled") setAttendanceReport(atr.value);
     setAnalyticsLoaded(true);
   }, [analyticsLoaded]);
 
@@ -249,7 +260,7 @@ export default function AdminDashboard({ user }: { user: User }) {
                 {tab === "library" && <LibraryTab users={users} />}
                 {tab === "announcements" && <AnnouncementsTab announcements={announcements} currentUser={user} onRefresh={refreshAnnouncements} />}
                 {tab === "events" && <EventsTab events={events} onRefresh={refreshEvents} />}
-                {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} attendance={attendance} grades={grades} payroll={payroll} staff={staff} leave={leave} />}
+                {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} attendance={attendance} grades={grades} payroll={payroll} staff={staff} leave={leave} academicReport={academicReport} financeReport={financeReport} hrReport={hrReport} attendanceReport={attendanceReport} />}
               </>
             )}
           </div>

@@ -420,6 +420,36 @@ export const apiDeleteBorrow = (id: string) =>
 /* ─── Reports ────────────────────────────────────────────────── */
 export const apiGetReportOverview = () => apiFetch<ReportOverview>("/reports/overview");
 
+export interface AcademicReport {
+  enrollmentTrend: { month: string; count: number }[];
+  gradeByBand: { band: string; count: number }[];
+  passFail: { name: string; value: number }[];
+  gradesByCourse: { course: string; avg: number }[];
+}
+
+export interface FinanceReport {
+  revenueTrend: { month: string; revenue: number }[];
+  paymentStatus: { name: string; value: number }[];
+  totalCollected: number;
+  totalOutstanding: number;
+}
+
+export interface HRReport {
+  headcountByDept: { dept: string; count: number }[];
+  leaveByType: { type: string; approved: number; pending: number; rejected: number }[];
+  payrollByMonth: { period: string; gross: number; net: number }[];
+}
+
+export interface AttendanceReport {
+  ratesByCourse: { course: string; rate: number }[];
+  dailyTrend: { date: string; present: number; absent: number; late: number; excused: number }[];
+}
+
+export const apiGetAcademicReport = () => apiFetch<AcademicReport>("/reports/academic");
+export const apiGetFinanceReport = () => apiFetch<FinanceReport>("/reports/finance");
+export const apiGetHRReport = () => apiFetch<HRReport>("/reports/hr");
+export const apiGetAttendanceReport = () => apiFetch<AttendanceReport>("/reports/attendance");
+
 export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
