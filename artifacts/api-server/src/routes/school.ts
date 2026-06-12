@@ -638,6 +638,13 @@ const fmtMsg = (m: DbMessage, um: Map<string, string>) => ({
   createdAt: m.created_at,
 });
 
+router.get("/messages/contacts", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const { data, error } = await db.from("school_users").select("id, name, role").eq("is_active", true).order("name");
+  if (error) throw error;
+  res.json(data ?? []);
+});
+
 router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
   const isAdmin = MGMT.has(req.user!.role);
@@ -693,7 +700,7 @@ router.delete("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
   if (!msg) { res.status(404).json({ error: "Not found" }); return; }
   const m = msg as { sender_id: string; recipient_id: string };
   const uid = String(req.user!.id);
-  if (m.sender_id !== uid && m.recipient_id !== uid && !MGMT.has(req.user!.role)) {
+  if (m.sender_id !== uid && m.recipient_id !== uid) {
     res.status(403).json({ error: "Forbidden" }); return;
   }
   const { error } = await db.from("school_messages").delete().eq("id", String(req.params["id"]));

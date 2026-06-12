@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Mail, Send, Plus, X, ChevronLeft, Trash2, Inbox, RefreshCw } from "lucide-react";
+import { Mail, Send, Plus, X, ChevronLeft, Trash2, Inbox, RefreshCw, EyeOff } from "lucide-react";
 import {
-  User, Message, isManagement,
-  apiGetMessages, apiGetUsers, apiSendMessage, apiMarkMessageRead, apiDeleteMessage,
+  User, MessageContact, isManagement,
+  apiGetMessages, apiGetContacts, apiSendMessage, apiMarkMessageRead, apiDeleteMessage,
+  Message,
 } from "../schoolApi";
 
 interface Props { currentUser: User; }
@@ -13,6 +14,7 @@ interface Thread {
   messages: Message[];
   lastMsg: Message;
   unread: number;
+  participantIds: Set<string>;
   otherIds: string[];
   otherNames: string[];
 }
@@ -31,19 +33,20 @@ function buildThreads(messages: Message[], myId: string): Thread[] {
       const all = [root, ...replies].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const lastMsg = all[all.length - 1];
       const unread = all.filter((m) => m.recipientId === myId && !m.isRead).length;
-      const otherIds = [...new Set(all.flatMap((m) => [m.senderId, m.recipientId]).filter((id) => id !== myId))];
+      const participantIds = new Set(all.flatMap((m) => [m.senderId, m.recipientId]));
+      const otherIds = [...participantIds].filter((id) => id !== myId);
       const otherNames = otherIds.map((id) => {
-        const found = all.find((m) => m.senderId === id || m.recipientId === id);
-        return found ? (found.senderId === id ? found.senderName : found.recipientName) : id;
+        const found = all.find((m) => m.senderId === id);
+        return found ? found.senderName : (all.find((m) => m.recipientId === id)?.recipientName ?? id);
       });
-      return { id: root.id, subject: root.subject || "(no subject)", messages: all, lastMsg, unread, otherIds, otherNames };
+      return { id: root.id, subject: root.subject || "(no subject)", messages: all, lastMsg, unread, participantIds, otherIds, otherNames };
     })
     .sort((a, b) => b.lastMsg.createdAt.localeCompare(a.lastMsg.createdAt));
 }
 
 export default function MessagingTab({ currentUser }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [contacts, setContacts] = useState<MessageContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "thread">("list");
@@ -56,12 +59,12 @@ export default function MessagingTab({ currentUser }: Props) {
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
-      const [msgs, usrs] = await Promise.allSettled([
+      const [msgs, ctcts] = await Promise.allSettled([
         apiGetMessages(showAll && canSeeAll ? { all: true } : undefined),
-        apiGetUsers(),
+        apiGetContacts(),
       ]);
       if (msgs.status === "fulfilled") setMessages(msgs.value);
-      if (usrs.status === "fulfilled") setUsers(usrs.value);
+      if (ctcts.status === "fulfilled") setContacts(ctcts.value);
     } finally {
       setLoading(false);
     }
@@ -123,7 +126,8 @@ export default function MessagingTab({ currentUser }: Props) {
             <button onClick={() => load(true)} className="p-1.5 text-gray-400 hover:text-[#1a6b2a] rounded-lg hover:bg-white transition-colors">
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => { setComposing(true); }} className="flex items-center gap-1 bg-[#1a6b2a] hover:bg-[#155a22] text-white text-[11px] font-black px-2.5 py-1.5 rounded-lg transition-colors">
+            <button onClick={() => setComposing(true)}
+              className="flex items-center gap-1 bg-[#1a6b2a] hover:bg-[#155a22] text-white text-[11px] font-black px-2.5 py-1.5 rounded-lg transition-colors">
               <Plus className="w-3 h-3" />New
             </button>
           </div>
@@ -143,7 +147,9 @@ export default function MessagingTab({ currentUser }: Props) {
                 className={`w-full text-left px-4 py-3 border-b border-gray-50 transition-colors hover:bg-[#f7f5f0] touch-manipulation ${selectedId === thread.id ? "bg-[#f0f7f1] border-l-2 border-l-[#1a6b2a]" : ""}`}>
                 <div className="flex items-start justify-between gap-2">
                   <p className={`text-sm truncate flex-1 ${thread.unread > 0 ? "font-black text-[#0f0f0f]" : "font-medium text-gray-700"}`}>
-                    {thread.otherNames.join(", ") || "Me"}
+                    {thread.participantIds.has(currentUser.id)
+                      ? (thread.otherNames.join(", ") || "Me")
+                      : thread.messages[0].senderName + " → " + thread.messages[0].recipientName}
                   </p>
                   <span className="text-[10px] text-gray-400 flex-shrink-0 mt-0.5">{formatTime(thread.lastMsg.createdAt)}</span>
                 </div>
@@ -176,8 +182,8 @@ export default function MessagingTab({ currentUser }: Props) {
             currentUser={currentUser}
             onBack={() => { setMobileView("list"); setSelectedId(null); }}
             onDelete={deleteMsg}
-            onReply={async (body) => {
-              await apiSendMessage({ recipientId: selectedThread.otherIds[0], subject: selectedThread.subject, body, parentId: selectedThread.id });
+            onReply={async (recipientId, body) => {
+              await apiSendMessage({ recipientId, subject: selectedThread.subject, body, parentId: selectedThread.id });
               load(true);
             }}
             formatTime={formatTime}
@@ -188,7 +194,7 @@ export default function MessagingTab({ currentUser }: Props) {
       {composing && (
         <ComposeModal
           currentUser={currentUser}
-          users={users}
+          contacts={contacts}
           onClose={() => setComposing(false)}
           onSend={async (recipientId, subject, body) => {
             await apiSendMessage({ recipientId, subject, body });
@@ -206,19 +212,22 @@ function ThreadView({ thread, currentUser, onBack, onDelete, onReply, formatTime
   thread: Thread; currentUser: User;
   onBack: () => void;
   onDelete: (id: string) => void;
-  onReply: (body: string) => Promise<void>;
+  onReply: (recipientId: string, body: string) => Promise<void>;
   formatTime: (iso: string) => string;
 }) {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const isParticipant = thread.participantIds.has(currentUser.id);
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [thread.messages.length]);
 
   const send = async () => {
-    if (!reply.trim()) return;
+    if (!reply.trim() || !isParticipant) return;
+    const replyTo = thread.otherIds.find((id) => id !== currentUser.id) ?? thread.otherIds[0];
     setSending(true);
-    try { await onReply(reply.trim()); setReply(""); }
+    try { await onReply(replyTo, reply.trim()); setReply(""); }
     finally { setSending(false); }
   };
 
@@ -230,11 +239,17 @@ function ThreadView({ thread, currentUser, onBack, onDelete, onReply, formatTime
           <p className="font-black text-[#0f0f0f] text-sm truncate">{thread.subject}</p>
           <p className="text-[11px] text-gray-400">{thread.otherNames.join(", ")} · {thread.messages.length} message{thread.messages.length !== 1 ? "s" : ""}</p>
         </div>
+        {!isParticipant && (
+          <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+            <EyeOff className="w-3 h-3" />View only
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {thread.messages.map((msg) => {
           const isMe = msg.senderId === currentUser.id;
+          const canDelete = msg.senderId === currentUser.id || msg.recipientId === currentUser.id;
           return (
             <div key={msg.id} className={`flex gap-3 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 ${isMe ? "bg-[#1a6b2a]" : "bg-blue-500"}`}>
@@ -247,10 +262,12 @@ function ThreadView({ thread, currentUser, onBack, onDelete, onReply, formatTime
                 </div>
                 <div className={`rounded-2xl px-4 py-2.5 text-sm group relative ${isMe ? "bg-[#1a6b2a] text-white rounded-tr-sm" : "bg-[#f7f5f0] text-[#0f0f0f] rounded-tl-sm"}`}>
                   {msg.body}
-                  <button onClick={() => onDelete(msg.id)}
-                    className={`absolute top-1 right-1 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isMe ? "text-white/60 hover:text-white" : "text-gray-400 hover:text-red-500"}`}>
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  {canDelete && (
+                    <button onClick={() => onDelete(msg.id)}
+                      className={`absolute top-1 right-1 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isMe ? "text-white/60 hover:text-white" : "text-gray-400 hover:text-red-500"}`}>
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -259,29 +276,37 @@ function ThreadView({ thread, currentUser, onBack, onDelete, onReply, formatTime
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0 bg-white">
-        <div className="flex gap-2">
-          <textarea
-            rows={2}
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="Reply… (Enter to send, Shift+Enter for new line)"
-            className="flex-1 bg-[#f7f5f0] border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1a6b2a]/30"
-          />
-          <button onClick={send} disabled={sending || !reply.trim()}
-            className="flex items-center justify-center gap-1.5 bg-[#1a6b2a] hover:bg-[#155a22] disabled:opacity-40 text-white font-black px-3 rounded-xl transition-colors touch-manipulation flex-shrink-0">
-            <Send className="w-4 h-4" />
-          </button>
+      {isParticipant ? (
+        <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0 bg-white">
+          <div className="flex gap-2">
+            <textarea
+              rows={2}
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder="Reply… (Enter to send, Shift+Enter for new line)"
+              className="flex-1 bg-[#f7f5f0] border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1a6b2a]/30"
+            />
+            <button onClick={send} disabled={sending || !reply.trim()}
+              className="flex items-center justify-center gap-1.5 bg-[#1a6b2a] hover:bg-[#155a22] disabled:opacity-40 text-white font-black px-3 rounded-xl transition-colors touch-manipulation flex-shrink-0">
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0 bg-amber-50">
+          <p className="text-xs text-amber-700 font-bold text-center">
+            You are not a participant in this conversation. Viewing in read-only mode.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ─── Compose modal ───────────────────────────────────────────── */
-function ComposeModal({ currentUser, users, onClose, onSend }: {
-  currentUser: User; users: User[];
+function ComposeModal({ currentUser, contacts, onClose, onSend }: {
+  currentUser: User; contacts: MessageContact[];
   onClose: () => void;
   onSend: (recipientId: string, subject: string, body: string) => Promise<void>;
 }) {
@@ -291,7 +316,7 @@ function ComposeModal({ currentUser, users, onClose, onSend }: {
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
 
-  const recipients = users.filter((u) => u.id !== currentUser.id && u.isActive !== false);
+  const recipients = contacts.filter((c) => c.id !== currentUser.id);
 
   const send = async () => {
     if (!recipientId) { setErr("Please select a recipient"); return; }
@@ -314,8 +339,8 @@ function ComposeModal({ currentUser, users, onClose, onSend }: {
             <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}
               className="w-full bg-[#f7f5f0] border border-gray-200 rounded-xl px-3 py-2.5 text-sm">
               <option value="">Select recipient…</option>
-              {recipients.map((u) => (
-                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+              {recipients.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.role})</option>
               ))}
             </select>
           </div>

@@ -270,6 +270,9 @@ export interface Message {
   parentId: string; createdAt: string;
 }
 
+export interface MessageContact { id: string; name: string; role: string; }
+export const apiGetContacts = () => apiFetch<MessageContact[]>("/messages/contacts");
+
 export const apiGetMessages = (params?: { box?: "inbox" | "sent" | "all"; all?: boolean }) => {
   const q = new URLSearchParams();
   if (params?.box) q.set("box", params.box);
