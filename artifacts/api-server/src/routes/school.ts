@@ -908,6 +908,11 @@ router.post("/quizzes", requireAuth, requireStaff, async (req: AuthRequest, res)
 
 router.patch("/quizzes/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
   const id = String(req.params["id"]);
+  const db = getSupabase();
+  const { data: existing, error: fetchErr } = await db.from("school_quizzes").select("course_id").eq("id", id).maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (!existing) { res.status(404).json({ error: "Quiz not found" }); return; }
+  if (!await assertCourseAccess(req, res, (existing as { course_id: string }).course_id)) return;
   const { title, instructions, dueDate, timeLimitMins, status, questions } = req.body as Record<string, unknown>;
   const upd: Record<string, unknown> = {};
   if (title !== undefined) upd["title"] = title;
@@ -916,29 +921,39 @@ router.patch("/quizzes/:id", requireAuth, requireStaff, async (req: AuthRequest,
   if (timeLimitMins !== undefined) upd["time_limit_mins"] = Number(timeLimitMins);
   if (status !== undefined) upd["status"] = status;
   if (questions !== undefined) upd["questions"] = questions;
-  const db = getSupabase();
   const { data, error } = await db.from("school_quizzes").update(upd).eq("id", id).select().single();
   if (error) throw error;
   const cm = await buildCourseMap();
   res.json(fmtQuiz(data as DbQuiz, cm));
 });
 
-router.delete("/quizzes/:id", requireAuth, requireStaff, async (req, res) => {
+router.delete("/quizzes/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
+  const id = String(req.params["id"]);
   const db = getSupabase();
-  const { error } = await db.from("school_quizzes").delete().eq("id", String(req.params["id"]));
+  const { data: existing, error: fetchErr } = await db.from("school_quizzes").select("course_id").eq("id", id).maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (!existing) { res.status(404).json({ error: "Quiz not found" }); return; }
+  if (!await assertCourseAccess(req, res, (existing as { course_id: string }).course_id)) return;
+  const { error } = await db.from("school_quizzes").delete().eq("id", id);
   if (error) throw error;
   res.status(204).send();
 });
 
 router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) => {
   const quizId = String(req.params["id"]);
-  const studentId = String(req.user!.id);
+  const uid = String(req.user!.id);
+  const role = req.user!.role;
   const answers = (req.body.answers || {}) as Record<string, string>;
   const db = getSupabase();
   const { data: quizData, error: qErr } = await db.from("school_quizzes").select("*").eq("id", quizId).maybeSingle();
   if (qErr) throw qErr;
   if (!quizData) { res.status(404).json({ error: "Quiz not found" }); return; }
   const quiz = quizData as DbQuiz;
+  if (quiz.status !== "published") { res.status(403).json({ error: "Quiz is not published" }); return; }
+  if (!MGMT.has(role) && role !== "instructor" && role !== "assistant") {
+    const { data: enr } = await db.from("school_enrollments").select("id").eq("student_id", uid).eq("course_id", quiz.course_id).neq("status", "withdrawn").limit(1).maybeSingle();
+    if (!enr) { res.status(403).json({ error: "Not enrolled in this course" }); return; }
+  }
   let score = 0, maxScore = 0;
   for (const q of quiz.questions) {
     if (q.type === "mcq" || q.type === "true_false") {
@@ -947,7 +962,7 @@ router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) =>
     }
   }
   const { data: sub, error: sErr } = await db.from("school_quiz_submissions").insert({
-    id: genId(), quiz_id: quizId, student_id: studentId,
+    id: genId(), quiz_id: quizId, student_id: uid,
     answers, score, max_score: maxScore,
     submitted_at: new Date().toISOString(),
   }).select().single();
@@ -955,18 +970,28 @@ router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) =>
   if (maxScore > 0) {
     try {
       await db.from("school_grades").insert({
-        id: genId(), student_id: studentId, course_id: quiz.course_id,
+        id: genId(), student_id: uid, course_id: quiz.course_id,
         assessment: quiz.title, score: String(score), max_score: String(maxScore),
         weight: "", grade: "", comment: "Auto-graded quiz", recorded_by: "system",
       });
     } catch { }
   }
-  res.status(201).json({ ...(sub as DbQuizSubmission), score, maxScore });
+  const s = sub as DbQuizSubmission;
+  res.status(201).json({
+    id: s.id, quizId: s.quiz_id, studentId: s.student_id,
+    answers: s.answers, score, maxScore,
+    submittedAt: s.submitted_at, createdAt: s.created_at,
+  });
 });
 
-router.get("/quizzes/:id/submissions", requireAuth, requireStaff, async (req, res) => {
+router.get("/quizzes/:id/submissions", requireAuth, requireStaff, async (req: AuthRequest, res) => {
+  const id = String(req.params["id"]);
   const db = getSupabase();
-  const { data, error } = await db.from("school_quiz_submissions").select("*").eq("quiz_id", String(req.params["id"])).order("submitted_at", { ascending: false });
+  const { data: existing, error: fetchErr } = await db.from("school_quizzes").select("course_id").eq("id", id).maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (!existing) { res.status(404).json({ error: "Quiz not found" }); return; }
+  if (!await assertCourseAccess(req, res, (existing as { course_id: string }).course_id)) return;
+  const { data, error } = await db.from("school_quiz_submissions").select("*").eq("quiz_id", id).order("submitted_at", { ascending: false });
   if (error) throw error;
   const um = await buildUserMap();
   res.json(((data ?? []) as DbQuizSubmission[]).map((s) => ({
@@ -983,7 +1008,13 @@ router.get("/quizzes/:id/my-submission", requireAuth, async (req: AuthRequest, r
     .eq("quiz_id", String(req.params["id"])).eq("student_id", String(req.user!.id))
     .order("submitted_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
-  res.json(data || null);
+  if (!data) { res.json(null); return; }
+  const s = data as DbQuizSubmission;
+  res.json({
+    id: s.id, quizId: s.quiz_id, studentId: s.student_id,
+    answers: s.answers, score: s.score, maxScore: s.max_score,
+    submittedAt: s.submitted_at, createdAt: s.created_at,
+  });
 });
 
 export default router;

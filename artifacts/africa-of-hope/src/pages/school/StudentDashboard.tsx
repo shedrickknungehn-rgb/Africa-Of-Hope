@@ -574,20 +574,19 @@ function StudentAssessmentsView({ user, myCourses }: { user: User; myCourses: Co
                 </div>
                 {quiz.instructions && <p className="text-xs text-gray-400 mt-2 italic">{quiz.instructions}</p>}
               </div>
-              <div className="flex-shrink-0">
-                {isSubmitted ? (
-                  <div className="text-center">
-                    <div className={`text-xl font-black ${pct !== null && pct >= 70 ? "text-green-600" : pct !== null && pct >= 50 ? "text-amber-600" : "text-red-600"}`}>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                {isSubmitted && (
+                  <div className="text-center mb-1">
+                    <div className={`text-lg font-black ${pct !== null && pct >= 70 ? "text-green-600" : pct !== null && pct >= 50 ? "text-amber-600" : "text-red-600"}`}>
                       {pct !== null ? `${pct}%` : "✓"}
                     </div>
-                    <p className="text-xs text-gray-400 font-bold">Submitted</p>
+                    <p className="text-[10px] text-gray-400 font-bold">Best score</p>
                   </div>
-                ) : (
-                  <button onClick={() => setActiveQuiz(quiz)}
-                    className="flex items-center gap-2 bg-[#1a6b2a] hover:bg-[#155a22] text-white font-black px-4 py-2.5 rounded-xl text-sm transition-colors touch-manipulation">
-                    Start Quiz
-                  </button>
                 )}
+                <button onClick={() => setActiveQuiz(quiz)}
+                  className={`flex items-center gap-2 font-black px-4 py-2.5 rounded-xl text-sm transition-colors touch-manipulation ${isSubmitted ? "bg-gray-100 hover:bg-gray-200 text-gray-700" : "bg-[#1a6b2a] hover:bg-[#155a22] text-white"}`}>
+                  {isSubmitted ? "Retake" : "Start Quiz"}
+                </button>
               </div>
             </div>
           </div>
