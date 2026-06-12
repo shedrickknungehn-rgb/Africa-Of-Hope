@@ -99,13 +99,12 @@ export default function SchoolLogin() {
           Back to main website
         </a>
       </div>
-
       <div className="flex-1 flex items-center justify-center px-4 py-8">
         <div className="w-full max-w-lg">
           {/* Header */}
           <div className="text-center mb-6">
-            <div className="bg-white rounded-2xl px-6 py-4 inline-block shadow-2xl mb-4">
-              <img src="/logo-full.png" alt="Africa of Hope Inc" className="h-16 sm:h-20 w-auto object-contain" />
+            <div className="rounded-2xl px-6 py-4 inline-block shadow-2xl mb-4 bg-[#000000]">
+              <img src="/school-logo.png" alt="Africa of Hope Inc" className="h-16 sm:h-20 w-auto object-contain" />
             </div>
             <p className="text-[#d4a017] font-bold text-sm tracking-widest uppercase mt-1">School Management System</p>
             <p className="text-white/40 text-xs mt-1">RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia</p>
