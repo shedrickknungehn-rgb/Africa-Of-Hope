@@ -151,6 +151,98 @@ export const schoolPayrollTable = pgTable("school_payroll", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+/* ─── Phase 3 Tables ──────────────────────────────────────── */
+
+export const schoolMessagesTable = pgTable("school_messages", {
+  id: text("id").primaryKey(),
+  senderId: text("sender_id").notNull(),
+  recipientId: text("recipient_id").notNull(),
+  subject: text("subject").notNull().default(""),
+  body: text("body").notNull(),
+  isRead: boolean("is_read").notNull().default(false),
+  parentId: text("parent_id").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const schoolTimetableTable = pgTable("school_timetable", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id").notNull(),
+  dayOfWeek: text("day_of_week").notNull(),
+  period: text("period").notNull().default(""),
+  room: text("room").notNull().default(""),
+  startTime: text("start_time").notNull().default(""),
+  endTime: text("end_time").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const schoolExamsTable = pgTable("school_exams", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id").notNull(),
+  title: text("title").notNull(),
+  examDate: timestamp("exam_date").notNull(),
+  startTime: text("start_time").notNull().default(""),
+  endTime: text("end_time").notNull().default(""),
+  room: text("room").notNull().default(""),
+  invigilatorId: text("invigilator_id").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const schoolQuizzesTable = pgTable("school_quizzes", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id").notNull(),
+  title: text("title").notNull(),
+  instructions: text("instructions").notNull().default(""),
+  dueDate: timestamp("due_date"),
+  timeLimitMins: integer("time_limit_mins").default(0),
+  status: text("status").notNull().default("draft"),
+  questions: jsonb("questions").$type<{ id: string; type: string; text: string; options?: string[]; correct?: string }[]>().notNull().default([]),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const schoolQuizSubmissionsTable = pgTable("school_quiz_submissions", {
+  id: text("id").primaryKey(),
+  quizId: text("quiz_id").notNull(),
+  studentId: text("student_id").notNull(),
+  answers: jsonb("answers").$type<Record<string, string>>().notNull().default({}),
+  score: integer("score").notNull().default(0),
+  maxScore: integer("max_score").notNull().default(0),
+  submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const parentStudentLinksTable = pgTable("parent_student_links", {
+  id: text("id").primaryKey(),
+  parentId: text("parent_id").notNull(),
+  studentId: text("student_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const schoolBooksTable = pgTable("school_books", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  author: text("author").notNull().default(""),
+  isbn: text("isbn").notNull().default(""),
+  category: text("category").notNull().default(""),
+  totalCopies: integer("total_copies").notNull().default(1),
+  availableCopies: integer("available_copies").notNull().default(1),
+  description: text("description").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const schoolBorrowsTable = pgTable("school_borrows", {
+  id: text("id").primaryKey(),
+  bookId: text("book_id").notNull(),
+  userId: text("user_id").notNull(),
+  borrowedDate: timestamp("borrowed_date").notNull().defaultNow(),
+  dueDate: timestamp("due_date").notNull(),
+  returnedDate: timestamp("returned_date"),
+  fineAmount: text("fine_amount").notNull().default("0"),
+  status: text("status").notNull().default("borrowed"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export type SchoolUser = typeof schoolUsersTable.$inferSelect;
 export type SchoolCourse = typeof schoolCoursesTable.$inferSelect;
 export type SchoolSession = typeof schoolSessionsTable.$inferSelect;
@@ -163,3 +255,11 @@ export type SchoolGrade = typeof schoolGradesTable.$inferSelect;
 export type SchoolStaffRecord = typeof schoolStaffRecordsTable.$inferSelect;
 export type SchoolLeaveRequest = typeof schoolLeaveRequestsTable.$inferSelect;
 export type SchoolPayroll = typeof schoolPayrollTable.$inferSelect;
+export type SchoolMessage = typeof schoolMessagesTable.$inferSelect;
+export type SchoolTimetable = typeof schoolTimetableTable.$inferSelect;
+export type SchoolExam = typeof schoolExamsTable.$inferSelect;
+export type SchoolQuiz = typeof schoolQuizzesTable.$inferSelect;
+export type SchoolQuizSubmission = typeof schoolQuizSubmissionsTable.$inferSelect;
+export type ParentStudentLink = typeof parentStudentLinksTable.$inferSelect;
+export type SchoolBook = typeof schoolBooksTable.$inferSelect;
+export type SchoolBorrow = typeof schoolBorrowsTable.$inferSelect;
