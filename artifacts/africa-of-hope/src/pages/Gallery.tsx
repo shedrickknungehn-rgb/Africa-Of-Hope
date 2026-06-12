@@ -1,11 +1,28 @@
 import { useState } from "react";
-import { Heart, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Heart, X, ChevronLeft, ChevronRight, GraduationCap } from "lucide-react";
 import { openDonate } from "@/lib/donate";
 import { useInView } from "@/hooks/useInView";
 
+type Photo = { src: string; cat: string; caption: string; tall?: boolean };
+
 const categories = ["All", "Charity", "Education", "Healthcare", "Media / TV", "Community"];
 
-const photos = [
+const graduationPhotos: Photo[] = [
+  { src: "/gallery/grad2-01.jpg", cat: "Graduation", caption: "Our second graduating class together with the Africa of Hope founders — Monrovia", tall: false },
+  { src: "/gallery/grad2-02.jpg", cat: "Graduation", caption: "Graduates gather for the official class photo — 2nd Graduation Program, Monrovia", tall: false },
+  { src: "/gallery/grad2-03.jpg", cat: "Graduation", caption: "Proud graduates celebrate their achievement — Monrovia", tall: false },
+  { src: "/gallery/grad2-04.jpg", cat: "Graduation", caption: "Graduates and faculty at the graduation ceremony — Monrovia", tall: false },
+  { src: "/gallery/grad2-05.jpg", cat: "Graduation", caption: "A graduate receives his certificate from our founder — Monrovia", tall: true },
+  { src: "/gallery/grad2-06.jpg", cat: "Graduation", caption: "Honoring our graduates with flowers and honor sashes — Monrovia", tall: true },
+  { src: "/gallery/grad2-07.jpg", cat: "Graduation", caption: "Family pride — a graduate with his mother — Monrovia", tall: false },
+  { src: "/gallery/grad2-08.jpg", cat: "Graduation", caption: "Celebrating success together on graduation day — Monrovia", tall: true },
+  { src: "/gallery/grad2-09.jpg", cat: "Graduation", caption: "Graduates wearing their traditional honor stoles — Monrovia", tall: true },
+  { src: "/gallery/grad2-10.jpg", cat: "Graduation", caption: "Graduates dressed for the occasion — Monrovia", tall: true },
+  { src: "/gallery/grad2-11.jpg", cat: "Graduation", caption: "A graduate proudly wears her honor stole — Monrovia", tall: true },
+  { src: "/gallery/grad2-12.jpg", cat: "Graduation", caption: "Skills in action — a student presentation during the program — Monrovia", tall: false },
+];
+
+const photos: Photo[] = [
   { src: "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&q=80", cat: "Education", caption: "Students in class — Africa of Hope Education Program", tall: true },
   { src: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&q=80", cat: "Charity", caption: "Food distribution to families in need", tall: false },
   { src: "https://images.unsplash.com/photo-1576671081837-49000212a370?w=800&q=80", cat: "Healthcare", caption: "Mobile clinic providing free medical care", tall: false },
@@ -23,31 +40,20 @@ const photos = [
   { src: "https://images.unsplash.com/photo-1581090700227-1e37b190418e?w=800&q=80", cat: "Media / TV", caption: "Broadcasting hope — Africa of Hope TV", tall: false },
 ];
 
-function GallerySection() {
-  const { ref, inView } = useInView();
-  return (
-    <div
-      ref={ref as React.RefObject<HTMLDivElement>}
-      className={`transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
-    />
-  );
-}
-
 export default function Gallery() {
   const [active, setActive] = useState("All");
-  const [lightbox, setLightbox] = useState<number | null>(null);
+  const [lb, setLb] = useState<{ list: Photo[]; index: number } | null>(null);
   const { ref: heroRef, inView: heroIn } = useInView();
+  const { ref: gradRef, inView: gradIn } = useInView();
 
   const filtered = active === "All" ? photos : photos.filter((p) => p.cat === active);
 
-  const goPrev = () => {
-    if (lightbox === null) return;
-    setLightbox((lightbox - 1 + filtered.length) % filtered.length);
-  };
-  const goNext = () => {
-    if (lightbox === null) return;
-    setLightbox((lightbox + 1) % filtered.length);
-  };
+  const openLb = (list: Photo[], index: number) => setLb({ list, index });
+  const closeLb = () => setLb(null);
+  const goPrev = () => setLb((p) => (p ? { ...p, index: (p.index - 1 + p.list.length) % p.list.length } : p));
+  const goNext = () => setLb((p) => (p ? { ...p, index: (p.index + 1) % p.list.length } : p));
+
+  const current = lb ? lb.list[lb.index] : null;
 
   return (
     <div className="pt-[57px]">
@@ -64,6 +70,31 @@ export default function Gallery() {
           <p className="text-white/70 text-lg max-w-2xl mx-auto leading-relaxed">
             Every image tells a story of resilience, transformation, and hope. Browse moments captured from our programs across Africa.
           </p>
+        </div>
+      </section>
+
+      {/* Featured Album: 2nd Graduation Program */}
+      <section className="py-16 bg-white border-b border-gray-100">
+        <div
+          ref={gradRef as React.RefObject<HTMLDivElement>}
+          className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 transition-all duration-700 ${gradIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+        >
+          <div className="text-center mb-10">
+            <span className="inline-flex items-center gap-2 text-[#d4a017] font-bold text-xs uppercase tracking-widest mb-3">
+              <GraduationCap className="w-4 h-4" /> Featured Album
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#0d3d1a]">
+              Our 2nd Graduation Program — <span className="text-[#d4a017]">Monrovia</span>
+            </h2>
+            <p className="text-gray-500 mt-4 max-w-2xl mx-auto leading-relaxed">
+              Celebrating the achievements of our second graduating class in Monrovia, Liberia — a proud milestone of education, hope, and empowerment.
+            </p>
+          </div>
+          <div className="columns-1 sm:columns-2 lg:columns-3 gap-4">
+            {graduationPhotos.map((photo, i) => (
+              <PhotoCard key={`grad-${i}`} photo={photo} index={i} onClick={() => openLb(graduationPhotos, i)} />
+            ))}
+          </div>
         </div>
       </section>
 
@@ -102,7 +133,7 @@ export default function Gallery() {
                 key={`${active}-${i}`}
                 photo={photo}
                 index={i}
-                onClick={() => setLightbox(i)}
+                onClick={() => openLb(filtered, i)}
               />
             ))}
           </div>
@@ -128,14 +159,14 @@ export default function Gallery() {
       </section>
 
       {/* Lightbox */}
-      {lightbox !== null && (
+      {lb !== null && current && (
         <div
           className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}
+          onClick={closeLb}
         >
           <button
             className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-            onClick={() => setLightbox(null)}
+            onClick={closeLb}
           >
             <X className="w-5 h-5" />
           </button>
@@ -153,16 +184,16 @@ export default function Gallery() {
           </button>
           <div className="max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
             <img
-              src={filtered[lightbox].src.replace("w=800", "w=1400")}
-              alt={filtered[lightbox].caption}
+              src={current.src.replace("w=800", "w=1400")}
+              alt={current.caption}
               className="w-full max-h-[75vh] object-contain rounded-xl"
             />
             <div className="text-center mt-4">
               <span className="inline-block bg-[#d4a017]/20 text-[#d4a017] text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-2">
-                {filtered[lightbox].cat}
+                {current.cat}
               </span>
-              <p className="text-white/80 text-sm">{filtered[lightbox].caption}</p>
-              <p className="text-white/40 text-xs mt-2">{lightbox + 1} / {filtered.length}</p>
+              <p className="text-white/80 text-sm">{current.caption}</p>
+              <p className="text-white/40 text-xs mt-2">{lb.index + 1} / {lb.list.length}</p>
             </div>
           </div>
         </div>
@@ -171,7 +202,7 @@ export default function Gallery() {
   );
 }
 
-function PhotoCard({ photo, index, onClick }: { photo: typeof photos[0]; index: number; onClick: () => void }) {
+function PhotoCard({ photo, index, onClick }: { photo: Photo; index: number; onClick: () => void }) {
   const { ref, inView } = useInView();
   return (
     <div
