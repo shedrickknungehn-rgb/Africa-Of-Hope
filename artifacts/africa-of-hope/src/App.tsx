@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,21 +8,30 @@ import Footer from "@/components/Footer";
 import DonateFab from "@/components/DonateFab";
 import LiveChat from "@/components/LiveChat";
 import Home from "@/pages/Home";
-import About from "@/pages/About";
-import Charity from "@/pages/Charity";
-import Education from "@/pages/Education";
-import Healthcare from "@/pages/Healthcare";
-import MediaTV from "@/pages/MediaTV";
-import Contact from "@/pages/Contact";
-import Gallery from "@/pages/Gallery";
-import Advocacy from "@/pages/Advocacy";
-import Team from "@/pages/Team";
-import SchoolLogin from "@/pages/school/SchoolLogin";
-import SchoolDashboard from "@/pages/school/SchoolDashboard";
-import LiveClass from "@/pages/school/LiveClass";
-import NotFound from "@/pages/not-found";
+
+const About = lazy(() => import("@/pages/About"));
+const Charity = lazy(() => import("@/pages/Charity"));
+const Education = lazy(() => import("@/pages/Education"));
+const Healthcare = lazy(() => import("@/pages/Healthcare"));
+const MediaTV = lazy(() => import("@/pages/MediaTV"));
+const Contact = lazy(() => import("@/pages/Contact"));
+const Gallery = lazy(() => import("@/pages/Gallery"));
+const Advocacy = lazy(() => import("@/pages/Advocacy"));
+const Team = lazy(() => import("@/pages/Team"));
+const SchoolLogin = lazy(() => import("@/pages/school/SchoolLogin"));
+const SchoolDashboard = lazy(() => import("@/pages/school/SchoolDashboard"));
+const LiveClass = lazy(() => import("@/pages/school/LiveClass"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient();
+
+function PageLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-[#0d3d1a]" />
+    </div>
+  );
+}
 
 function AppRoutes() {
   const [location] = useLocation();
@@ -30,23 +40,25 @@ function AppRoutes() {
   return (
     <>
       {!isSchool && <Navbar />}
-      <Switch>
-        <Route path="/school" component={SchoolLogin} />
-        <Route path="/school/dashboard" component={SchoolDashboard} />
-        <Route path="/school/class/:id" component={LiveClass} />
+      <Suspense fallback={<PageLoader />}>
+        <Switch>
+          <Route path="/school" component={SchoolLogin} />
+          <Route path="/school/dashboard" component={SchoolDashboard} />
+          <Route path="/school/class/:id" component={LiveClass} />
 
-        <Route path="/" component={Home} />
-        <Route path="/about" component={About} />
-        <Route path="/charity" component={Charity} />
-        <Route path="/education" component={Education} />
-        <Route path="/healthcare" component={Healthcare} />
-        <Route path="/media" component={MediaTV} />
-        <Route path="/advocacy" component={Advocacy} />
-        <Route path="/team" component={Team} />
-        <Route path="/gallery" component={Gallery} />
-        <Route path="/contact" component={Contact} />
-        <Route component={NotFound} />
-      </Switch>
+          <Route path="/" component={Home} />
+          <Route path="/about" component={About} />
+          <Route path="/charity" component={Charity} />
+          <Route path="/education" component={Education} />
+          <Route path="/healthcare" component={Healthcare} />
+          <Route path="/media" component={MediaTV} />
+          <Route path="/advocacy" component={Advocacy} />
+          <Route path="/team" component={Team} />
+          <Route path="/gallery" component={Gallery} />
+          <Route path="/contact" component={Contact} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
       {!isSchool && <Footer />}
       {!isSchool && <DonateFab />}
       {!isSchool && <LiveChat />}
