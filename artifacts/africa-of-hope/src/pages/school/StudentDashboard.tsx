@@ -116,9 +116,9 @@ export default function StudentDashboard({ user }: { user: User }) {
 
           {tab === "overview" && <OverviewView isAlumni={isAlumni} myCourses={myCourses} grades={grades} attendance={attendance} payments={payments} announcements={myAnnouncements} onGo={changeTab} onJoin={(id) => navigate(`/school/class/${id}`)} />}
           {tab === "courses" && <CoursesView isAlumni={isAlumni} myCourses={myCourses} enrollments={enrollments} onJoin={(id) => navigate(`/school/class/${id}`)} />}
-          {tab === "transcript" && <TranscriptView grades={grades} courses={courses} />}
+          {tab === "transcript" && <TranscriptView grades={grades} courses={courses} studentName={user.name} />}
           {tab === "attendance" && <AttendanceView attendance={attendance} />}
-          {tab === "finance" && <FinanceView payments={payments} />}
+          {tab === "finance" && <FinanceView payments={payments} studentName={user.name} />}
           {tab === "assessments" && <StudentAssessmentsView user={user} myCourses={myCourses} />}
           {tab === "schedule" && <StudentScheduleView myCourses={myCourses} timetable={timetable} exams={exams} />}
           {tab === "inbox" && <MessagingTab currentUser={user} />}
@@ -214,7 +214,7 @@ function CoursesView({ isAlumni, myCourses, enrollments, onJoin }: { isAlumni: b
 }
 
 /* ─── Transcript ─────────────────────────────────────────────── */
-function TranscriptView({ grades, courses }: { grades: Grade[]; courses: Course[] }) {
+function TranscriptView({ grades, courses, studentName }: { grades: Grade[]; courses: Course[]; studentName?: string }) {
   if (grades.length === 0) return <Empty text="No grades have been recorded yet." />;
   const byCourse = useMemo(() => {
     const map = new Map<string, Grade[]>();
@@ -224,8 +224,19 @@ function TranscriptView({ grades, courses }: { grades: Grade[]; courses: Course[
   const courseTitle = (id: string) => courses.find((c) => c.id === id)?.title || grades.find((g) => g.courseId === id)?.courseTitle || "Course";
   const pct = (g: Grade) => { const s = parseFloat(g.score), m = parseFloat(g.maxScore); return m > 0 ? Math.round((s / m) * 100) : 0; };
 
+  const handleDownload = async () => {
+    const { exportTranscriptPdf } = await import("./pdf/exportPdf");
+    exportTranscriptPdf(studentName || "Student", grades, courses);
+  };
+
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <button onClick={handleDownload} className="flex items-center gap-2 bg-[#0d3d1a] hover:bg-[#1a6b2a] text-white font-bold text-sm px-4 py-2.5 rounded-xl transition-colors">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          Download Transcript
+        </button>
+      </div>
       {[...byCourse.entries()].map(([cid, list]) => {
         const avg = Math.round(list.reduce((a, g) => a + pct(g), 0) / list.length);
         return (
@@ -286,11 +297,21 @@ function AttendanceView({ attendance }: { attendance: Attendance[] }) {
 }
 
 /* ─── Finance ────────────────────────────────────────────────── */
-function FinanceView({ payments }: { payments: Payment[] }) {
+function FinanceView({ payments, studentName }: { payments: Payment[]; studentName?: string }) {
   const num = (s: string) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
   const paid = payments.filter((p) => p.status === "paid").reduce((a, p) => a + num(p.amount), 0);
   const due = payments.filter((p) => p.status === "pending" || p.status === "overdue").reduce((a, p) => a + num(p.amount), 0);
   const badge: Record<string, string> = { paid: "bg-green-100 text-green-700", pending: "bg-amber-100 text-amber-700", overdue: "bg-red-100 text-red-700", waived: "bg-gray-100 text-gray-600" };
+
+  const downloadAll = async () => {
+    const { exportAllReceiptsPdf } = await import("./pdf/exportPdf");
+    exportAllReceiptsPdf(payments, studentName || "Student");
+  };
+  const downloadOne = async (p: Payment) => {
+    const { exportReceiptPdf } = await import("./pdf/exportPdf");
+    exportReceiptPdf(p, studentName || "Student");
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -299,8 +320,14 @@ function FinanceView({ payments }: { payments: Payment[] }) {
       </div>
       {payments.length === 0 ? <Empty text="No payment records yet." /> : (
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex justify-end px-4 py-3 border-b border-gray-100">
+            <button onClick={downloadAll} className="flex items-center gap-1.5 text-xs font-bold text-[#1a6b2a] hover:underline">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Download All
+            </button>
+          </div>
           <table className="w-full text-sm">
-            <thead className="bg-[#f7f5f0] text-gray-500 text-xs uppercase"><tr><th className="text-left px-5 py-2.5">Course</th><th className="text-left px-5 py-2.5">Amount</th><th className="text-left px-5 py-2.5">Due</th><th className="text-left px-5 py-2.5">Status</th></tr></thead>
+            <thead className="bg-[#f7f5f0] text-gray-500 text-xs uppercase"><tr><th className="text-left px-5 py-2.5">Course</th><th className="text-left px-5 py-2.5">Amount</th><th className="text-left px-5 py-2.5">Due</th><th className="text-left px-5 py-2.5">Status</th><th className="px-5 py-2.5"></th></tr></thead>
             <tbody>
               {payments.map((p) => (
                 <tr key={p.id} className="border-t border-gray-100">
@@ -308,6 +335,11 @@ function FinanceView({ payments }: { payments: Payment[] }) {
                   <td className="px-5 py-3 font-mono">${num(p.amount).toFixed(2)}</td>
                   <td className="px-5 py-3 text-gray-500">{p.dueDate ? new Date(p.dueDate).toLocaleDateString() : "—"}</td>
                   <td className="px-5 py-3"><span className={`text-xs font-bold px-2 py-1 rounded-full capitalize ${badge[p.status]}`}>{p.status}</span></td>
+                  <td className="px-5 py-3">
+                    <button onClick={() => downloadOne(p)} title="Download receipt" className="w-7 h-7 rounded-lg bg-[#0d3d1a]/10 hover:bg-[#0d3d1a]/20 text-[#0d3d1a] flex items-center justify-center transition-colors">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

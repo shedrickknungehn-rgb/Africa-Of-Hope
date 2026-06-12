@@ -4,7 +4,7 @@ const API = `${API_BASE}/api/school`;
 export type Role =
   | "super_admin" | "director" | "registrar" | "academic_coordinator"
   | "finance_officer" | "hr_officer" | "instructor" | "assistant"
-  | "student" | "alumni" | "admin";
+  | "student" | "alumni" | "admin" | "parent";
 
 export const MANAGEMENT_ROLES = new Set<string>([
   "admin", "super_admin", "director", "registrar",
@@ -17,7 +17,7 @@ export const ROLE_LABELS: Record<string, string> = {
   super_admin: "Super Admin", director: "Director", registrar: "Registrar",
   academic_coordinator: "Academic Coordinator", finance_officer: "Finance Officer",
   hr_officer: "HR Officer", instructor: "Instructor", assistant: "Assistant",
-  student: "Student", alumni: "Alumni", admin: "Admin",
+  student: "Student", alumni: "Alumni", admin: "Admin", parent: "Parent/Guardian",
 };
 
 export const ROLE_COLORS: Record<string, string> = {
@@ -26,12 +26,12 @@ export const ROLE_COLORS: Record<string, string> = {
   finance_officer: "bg-teal-100 text-teal-800", hr_officer: "bg-cyan-100 text-cyan-800",
   instructor: "bg-blue-100 text-blue-800", assistant: "bg-purple-100 text-purple-800",
   student: "bg-green-100 text-green-800", alumni: "bg-indigo-100 text-indigo-800",
-  admin: "bg-red-100 text-red-800",
+  admin: "bg-red-100 text-red-800", parent: "bg-pink-100 text-pink-800",
 };
 
 export const ALL_ROLES: Role[] = [
   "super_admin", "director", "registrar", "academic_coordinator",
-  "finance_officer", "hr_officer", "instructor", "assistant", "student", "alumni",
+  "finance_officer", "hr_officer", "instructor", "assistant", "student", "alumni", "parent",
 ];
 
 export interface User {
@@ -369,6 +369,53 @@ export const apiGetQuizSubmissions = (id: string) =>
   apiFetch<QuizSubmission[]>(`/quizzes/${id}/submissions`);
 export const apiGetMyQuizSubmission = (id: string) =>
   apiFetch<QuizSubmission | null>(`/quizzes/${id}/my-submission`);
+
+/* ─── Parent Links ───────────────────────────────────────────── */
+export interface ParentLink {
+  id: string; parentId: string; studentId: string; studentName?: string; createdAt: string;
+}
+
+export const apiGetMyChildren = () => apiFetch<User[]>("/users/my-children");
+export const apiGetParentLinks = () => apiFetch<ParentLink[]>("/parent-links");
+export const apiCreateParentLink = (data: { parentId: string; studentId: string }) =>
+  apiFetch<ParentLink>("/parent-links", { method: "POST", body: JSON.stringify(data) });
+export const apiDeleteParentLink = (id: string) =>
+  apiFetch<void>(`/parent-links/${id}`, { method: "DELETE" });
+
+/* ─── Library ────────────────────────────────────────────────── */
+export interface Book {
+  id: string; title: string; author: string; isbn: string; category: string;
+  totalCopies: number; availableCopies: number; description: string; createdAt: string;
+}
+
+export interface Borrow {
+  id: string; bookId: string; bookTitle: string; userId: string; userName: string;
+  borrowedDate: string; dueDate: string; returnedDate: string | null;
+  fineAmount: string; status: string; createdAt: string;
+}
+
+export const apiGetBooks = () => apiFetch<Book[]>("/books");
+export const apiCreateBook = (data: Omit<Book, "id" | "createdAt">) =>
+  apiFetch<Book>("/books", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateBook = (id: string, data: Partial<Omit<Book, "id" | "createdAt">>) =>
+  apiFetch<Book>(`/books/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+export const apiDeleteBook = (id: string) =>
+  apiFetch<void>(`/books/${id}`, { method: "DELETE" });
+
+export const apiGetBorrows = (params?: { userId?: string; bookId?: string; status?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.userId) q.set("userId", params.userId);
+  if (params?.bookId) q.set("bookId", params.bookId);
+  if (params?.status) q.set("status", params.status);
+  const qs = q.toString();
+  return apiFetch<Borrow[]>(`/borrows${qs ? "?" + qs : ""}`);
+};
+export const apiCreateBorrow = (data: { bookId: string; userId?: string; dueDate: string }) =>
+  apiFetch<Borrow>("/borrows", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateBorrow = (id: string, data: { status?: string; fineAmount?: string; returnedDate?: string }) =>
+  apiFetch<Borrow>(`/borrows/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+export const apiDeleteBorrow = (id: string) =>
+  apiFetch<void>(`/borrows/${id}`, { method: "DELETE" });
 
 /* ─── Reports ────────────────────────────────────────────────── */
 export const apiGetReportOverview = () => apiFetch<ReportOverview>("/reports/overview");

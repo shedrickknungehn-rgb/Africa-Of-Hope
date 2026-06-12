@@ -4,6 +4,7 @@ import { getSession, isManagement } from "./schoolApi";
 import AdminDashboard from "./AdminDashboard";
 import InstructorDashboard from "./InstructorDashboard";
 import StudentDashboard from "./StudentDashboard";
+import ParentDashboard from "./ParentDashboard";
 
 export default function SchoolDashboard() {
   const [, navigate] = useLocation();
@@ -21,5 +22,6 @@ export default function SchoolDashboard() {
 
   if (isManagement(user.role)) return <AdminDashboard user={user} />;
   if (user.role === "instructor" || user.role === "assistant") return <InstructorDashboard user={user} />;
+  if (user.role === "parent") return <ParentDashboard user={user} />;
   return <StudentDashboard user={user} />;
 }

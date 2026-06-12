@@ -218,6 +218,10 @@ function PayrollSection({ payroll, staff, eligible, onRefresh }: { payroll: Payr
   };
 
   const markPaid = async (id: string) => { setUpdating(id); try { await apiUpdatePayroll(id, { status: "paid" }); onRefresh(); } catch { /* silent */ } finally { setUpdating(null); } };
+  const downloadPayslip = async (p: Payroll) => {
+    const { exportPayslipPdf } = await import("../pdf/exportPdf");
+    exportPayslipPdf(p, p.userName || nameFor(p.userId) || p.userId);
+  };
 
   const totalNet = payroll.reduce((a, p) => a + num(p.net), 0);
   const paidCount = payroll.filter((p) => p.status === "paid").length;
@@ -248,7 +252,14 @@ function PayrollSection({ payroll, staff, eligible, onRefresh }: { payroll: Payr
                   <td className="px-4 py-3 text-sm font-mono text-red-500">-${num(p.deductions).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm font-mono font-bold text-[#1a6b2a]">${num(p.net).toFixed(2)}</td>
                   <td className="px-4 py-3"><span className={`text-xs font-bold px-2 py-1 rounded-full ${p.status === "paid" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{p.status}</span></td>
-                  <td className="px-4 py-3">{p.status === "pending" ? <button onClick={() => markPaid(p.id)} disabled={updating === p.id} className="flex items-center gap-1 text-xs font-bold px-2 py-1 bg-green-500 text-white rounded-lg disabled:opacity-40 touch-manipulation"><CheckCircle className="w-3 h-3" />Mark Paid</button> : <span className="text-xs text-gray-300">{p.paidAt ? new Date(p.paidAt).toLocaleDateString() : "—"}</span>}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      {p.status === "pending" ? <button onClick={() => markPaid(p.id)} disabled={updating === p.id} className="flex items-center gap-1 text-xs font-bold px-2 py-1 bg-green-500 text-white rounded-lg disabled:opacity-40 touch-manipulation"><CheckCircle className="w-3 h-3" />Mark Paid</button> : <span className="text-xs text-gray-300">{p.paidAt ? new Date(p.paidAt).toLocaleDateString() : "—"}</span>}
+                      <button onClick={() => downloadPayslip(p)} title="Download payslip" className="w-7 h-7 rounded-lg bg-[#0d3d1a]/10 hover:bg-[#0d3d1a]/20 text-[#0d3d1a] flex items-center justify-center flex-shrink-0">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {payroll.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center"><DollarSign className="w-8 h-8 text-gray-300 mx-auto mb-2" /><p className="text-gray-400 text-sm">No payroll records yet</p></td></tr>}

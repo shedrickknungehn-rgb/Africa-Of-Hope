@@ -40,9 +40,19 @@ description: Full stack architecture, Supabase migration, Vercel/Express deploym
 - `school_payments` — text PK; status: pending/paid/overdue/waived
 - `contact_submissions`, `donations` — existing tables unchanged
 
-## 9 Roles (TEXT in DB — Phase 1 expanded from 4 to 9)
+## Phase 3 Tables (migration 008)
+- `school_messages` — messaging between users
+- `school_timetable` — weekly timetable slots
+- `school_exams` — exam schedule
+- `school_quizzes` — online assessments (with questions JSONB)
+- `school_quiz_submissions` — student submissions
+- `school_parent_links` — parent↔student relationships
+- `school_books` — library catalog
+- `school_borrows` — library borrowing records
+
+## 11 Roles (TEXT in DB — Phase 3 added parent)
 Management → AdminDashboard: admin, super_admin, director, registrar, academic_coordinator, finance_officer, hr_officer
-Non-management: instructor, assistant → InstructorDashboard; student, alumni → StudentDashboard
+Non-management: instructor, assistant → InstructorDashboard; student, alumni → StudentDashboard; parent → ParentDashboard
 
 ## Auth Flow
 - POST `/api/school/auth/login` → `{token, user}` → localStorage
@@ -57,23 +67,35 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 
 **Why plaintext passwords:** AdminDashboard Users tab has show/hide password for admins to share credentials. Internal portal only.
 
-## CRITICAL: Migration 006 must be run in Supabase before Phase 1 tables work
-File: `supabase/migrations/006_phase1_expansion.sql`
-Run in: Supabase Dashboard → SQL Editor → paste entire file → Run
-This converts role/status ENUMs to TEXT and creates enrollments/announcements/events/payments tables.
-
-## CRITICAL: Migration 007 must be run in Supabase before Phase 2 tables work
-File: `supabase/migrations/007_phase2_expansion.sql`
-Creates school_attendance, school_grades, school_staff_records, school_leave_requests, school_payroll.
-Run manually in Supabase SQL Editor (same as 006). HRTab shows a warning banner when these tables are missing.
+## CRITICAL: Migrations must be run in Supabase before tables work
+- Migration 006: role/status ENUMs to TEXT + Phase 1 tables
+- Migration 007: Phase 2 tables (attendance, grades, staff, leave, payroll)
+- Migration 008: Phase 3 tables (messaging, timetable, exams, quizzes, parent_links, books, borrows)
+Run all in: Supabase Dashboard → SQL Editor → paste entire file → Run
 
 ## Phase 2 access-control convention (school.ts) — KEEP CONSISTENT
 **Why:** academic records and payroll are sensitive; an early version let any logged-in user read/write any student's data (IDOR).
 **How to apply:**
-- `GET /attendance` and `GET /grades`: if `!STAFF.has(role)` (i.e. student/alumni), force `student_id = req.user.id` — they only ever see their own rows. Staff may filter by studentId/courseId.
+- `GET /attendance` and `GET /grades`: if `!STAFF.has(role)` (i.e. student/alumni/parent), force `student_id = req.user.id` — they only ever see their own rows. Staff may filter by studentId/courseId.
+- Parent role: GET /attendance and /grades also support parentId query param — API resolves children via school_parent_links and returns all children's data.
 - Staff writes to attendance/grades/materials must pass `assertCourseAccess(req,res,courseId)`: management + assistant → any class; instructor → only courses where `instructor_id === user.id`. For PATCH/DELETE, look up the row's course_id first, then assert.
 - Instructor materials editing uses dedicated `PATCH /courses/:id/materials` (requireStaff + assertCourseAccess), NOT `PATCH /courses/:id` (requireMgmt). Frontend: `apiUpdateCourseMaterials`.
 - Leave/payroll: non-management constrained to their own rows; staff records + payroll create/update are requireMgmt.
+
+## PDF Export (jspdf + jspdf-autotable, in @workspace/africa-of-hope)
+- Utility: `src/pages/school/pdf/exportPdf.ts`
+- Functions: exportTranscriptPdf, exportAttendancePdf, exportReceiptPdf, exportAllReceiptsPdf, exportPayslipPdf
+- All dynamically imported (lazy) to avoid bloating the initial bundle
+- Header uses GREEN (#0d3d1a) + GOLD (#d4a017) branding; school name + address
+- Added to: StudentDashboard (transcript + finance tabs), ParentDashboard (grades + finance tabs), HRTab (payslip per payroll row)
+
+## Advanced Reports & Analytics (ReportsTab, recharts)
+- `artifacts/africa-of-hope/src/pages/school/admin/ReportsTab.tsx` — fully rewritten
+- 5 sections: Overview, Enrollment, Finance, Academic, HR & Payroll
+- Charts: AreaChart (enrollment trend), BarChart (revenue, grade dist, enrollments by course), PieChart (status breakdowns, roles), LineChart (payroll trend)
+- All analytics data lazy-loaded on first Reports tab visit (attendance, grades, payroll, staff)
+- "Export PDF" button generates a multi-section analytics report via jspdf
+- jsPDF used via dynamic import in ReportsTab; type-cast via `as unknown as { lastAutoTable: ... }`
 
 ## Env Variables Required
 ### Backend

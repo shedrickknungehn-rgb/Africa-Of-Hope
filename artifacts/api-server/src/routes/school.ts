@@ -7,6 +7,13 @@ type AuthRequest = Request & { user?: JwtPayload };
 
 const MGMT = new Set(["admin", "super_admin", "director", "registrar", "academic_coordinator", "finance_officer", "hr_officer"]);
 
+interface DbParentLink { id: string; parent_id: string; student_id: string; created_at: string; }
+
+async function getChildIds(db: ReturnType<typeof getSupabase>, parentId: string | number): Promise<string[]> {
+  const { data } = await db.from("parent_student_links").select("student_id").eq("parent_id", String(parentId));
+  return (data ?? []).map((r: { student_id: string }) => r.student_id);
+}
+
 function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
   const h = req.headers["authorization"];
   if (!h?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
@@ -138,6 +145,48 @@ router.delete("/users/:id", requireAuth, requireMgmt, async (req: AuthRequest, r
   if (id === req.user!.id) { res.status(400).json({ error: "Cannot delete your own account" }); return; }
   const db = getSupabase();
   const { error } = await db.from("school_users").delete().eq("id", id);
+  if (error) throw error;
+  res.status(204).send();
+});
+
+/* ─── Parent Links ───────────────────────────────────────────── */
+router.get("/users/my-children", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const childIds = await getChildIds(db, req.user!.id);
+  if (childIds.length === 0) { res.json([]); return; }
+  const { data, error } = await db.from("school_users").select("*").in("id", childIds.map(Number));
+  if (error) throw error;
+  res.json(((data ?? []) as DbUser[]).map((u) => fmtUser(u, false)));
+});
+
+router.get("/parent-links", requireAuth, requireMgmt, async (_req, res) => {
+  const db = getSupabase();
+  const { data, error } = await db.from("parent_student_links").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  const { data: users } = await db.from("school_users").select("id, name");
+  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
+  res.json(((data ?? []) as DbParentLink[]).map((l) => ({
+    id: l.id, parentId: l.parent_id, studentId: l.student_id,
+    studentName: um.get(l.student_id) || "", createdAt: l.created_at,
+  })));
+});
+
+router.post("/parent-links", requireAuth, requireMgmt, async (req, res) => {
+  const { parentId, studentId } = req.body as Record<string, string>;
+  if (!parentId || !studentId) { res.status(400).json({ error: "parentId and studentId required" }); return; }
+  const db = getSupabase();
+  const { data, error } = await db.from("parent_student_links").insert({ id: genId(), parent_id: parentId, student_id: studentId }).select().single();
+  if (error) {
+    if (error.code === "23505" || error.message?.includes("unique")) res.status(409).json({ error: "Link already exists" });
+    else throw error;
+    return;
+  }
+  res.status(201).json({ id: (data as DbParentLink).id, parentId, studentId, createdAt: (data as DbParentLink).created_at });
+});
+
+router.delete("/parent-links/:id", requireAuth, requireMgmt, async (req, res) => {
+  const db = getSupabase();
+  const { error } = await db.from("parent_student_links").delete().eq("id", String(req.params["id"]));
   if (error) throw error;
   res.status(204).send();
 });
@@ -319,8 +368,20 @@ router.delete("/events/:id", requireAuth, requireMgmt, async (req, res) => {
 /* ─── Payments ───────────────────────────────────────────────── */
 router.get("/payments", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
+  const role = req.user!.role;
+  const uid = String(req.user!.id);
   let q = db.from("school_payments").select("*");
-  if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+  if (role === "parent") {
+    const childIds = req.query["studentId"]
+      ? [String(req.query["studentId"])]
+      : await getChildIds(db, uid);
+    if (childIds.length === 0) { res.json([]); return; }
+    q = q.in("student_id", childIds);
+  } else if (!STAFF.has(role) && role !== "student" && role !== "alumni") {
+    q = q.eq("student_id", uid);
+  } else {
+    if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+  }
   if (req.query["status"]) q = q.eq("status", String(req.query["status"]));
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
@@ -357,11 +418,19 @@ router.patch("/payments/:id", requireAuth, requireMgmt, async (req, res) => {
 /* ─── Attendance ─────────────────────────────────────────────── */
 router.get("/attendance", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
+  const role = req.user!.role;
+  const uid = String(req.user!.id);
   let q = db.from("school_attendance").select("*");
-  if (!STAFF.has(req.user!.role)) {
-    q = q.eq("student_id", String(req.user!.id)); // students/alumni: own records only
-  } else {
+  if (STAFF.has(role)) {
     if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+  } else if (role === "parent") {
+    const childIds = req.query["studentId"]
+      ? [String(req.query["studentId"])]
+      : await getChildIds(db, uid);
+    if (childIds.length === 0) { res.json([]); return; }
+    q = q.in("student_id", childIds);
+  } else {
+    q = q.eq("student_id", uid);
   }
   if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
   if (req.query["date"]) q = q.eq("session_date", String(req.query["date"]));
@@ -398,11 +467,19 @@ router.delete("/attendance/:id", requireAuth, requireStaff, async (req: AuthRequ
 /* ─── Grades ─────────────────────────────────────────────────── */
 router.get("/grades", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
+  const role = req.user!.role;
+  const uid = String(req.user!.id);
   let q = db.from("school_grades").select("*");
-  if (!STAFF.has(req.user!.role)) {
-    q = q.eq("student_id", String(req.user!.id)); // students/alumni: own records only
-  } else {
+  if (STAFF.has(role)) {
     if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+  } else if (role === "parent") {
+    const childIds = req.query["studentId"]
+      ? [String(req.query["studentId"])]
+      : await getChildIds(db, uid);
+    if (childIds.length === 0) { res.json([]); return; }
+    q = q.in("student_id", childIds);
+  } else {
+    q = q.eq("student_id", uid);
   }
   if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
   const { data, error } = await q.order("created_at", { ascending: false });
@@ -1021,6 +1098,139 @@ router.get("/quizzes/:id/my-submission", requireAuth, async (req: AuthRequest, r
     answers: s.answers, score: s.score, maxScore: s.max_score,
     submittedAt: s.submitted_at, createdAt: s.created_at,
   });
+});
+
+/* ─── Library: Books ─────────────────────────────────────────── */
+interface DbBook { id: string; title: string; author: string; isbn: string; category: string; total_copies: number; available_copies: number; description: string; created_at: string; }
+interface DbBorrow { id: string; book_id: string; user_id: string; borrowed_date: string; due_date: string; returned_date: string | null; fine_amount: string; status: string; created_at: string; }
+
+const fmtBook = (b: DbBook) => ({ id: b.id, title: b.title, author: b.author, isbn: b.isbn, category: b.category, totalCopies: b.total_copies, availableCopies: b.available_copies, description: b.description, createdAt: b.created_at });
+const fmtBorrow = (b: DbBorrow, um: Map<string, string>, bm: Map<string, string>) => ({ id: b.id, bookId: b.book_id, bookTitle: bm.get(b.book_id) || b.book_id, userId: b.user_id, userName: um.get(b.user_id) || b.user_id, borrowedDate: b.borrowed_date, dueDate: b.due_date, returnedDate: b.returned_date, fineAmount: b.fine_amount, status: b.status, createdAt: b.created_at });
+
+async function buildBookMap(db: ReturnType<typeof getSupabase>): Promise<Map<string, string>> {
+  const { data } = await db.from("school_books").select("id, title");
+  return new Map((data ?? []).map((b: { id: string; title: string }) => [b.id, b.title]));
+}
+
+router.get("/books", requireAuth, async (_req, res) => {
+  const db = getSupabase();
+  const { data, error } = await db.from("school_books").select("*").order("title", { ascending: true });
+  if (error) throw error;
+  res.json(((data ?? []) as DbBook[]).map(fmtBook));
+});
+
+router.post("/books", requireAuth, requireMgmt, async (req, res) => {
+  const { title, author, isbn, category, totalCopies, description } = req.body as Record<string, string>;
+  if (!title) { res.status(400).json({ error: "title required" }); return; }
+  const copies = Number(totalCopies) || 1;
+  const db = getSupabase();
+  const { data, error } = await db.from("school_books").insert({ id: genId(), title, author: author || "", isbn: isbn || "", category: category || "", total_copies: copies, available_copies: copies, description: description || "" }).select().single();
+  if (error) throw error;
+  res.status(201).json(fmtBook(data as DbBook));
+});
+
+router.patch("/books/:id", requireAuth, requireMgmt, async (req, res) => {
+  const id = String(req.params["id"]);
+  const { title, author, isbn, category, totalCopies, availableCopies, description } = req.body as Record<string, string>;
+  const upd: Record<string, string | number> = {};
+  if (title) upd["title"] = title;
+  if (author !== undefined) upd["author"] = author;
+  if (isbn !== undefined) upd["isbn"] = isbn;
+  if (category !== undefined) upd["category"] = category;
+  if (totalCopies !== undefined) upd["total_copies"] = Number(totalCopies);
+  if (availableCopies !== undefined) upd["available_copies"] = Number(availableCopies);
+  if (description !== undefined) upd["description"] = description;
+  const db = getSupabase();
+  const { data, error } = await db.from("school_books").update(upd).eq("id", id).select().single();
+  if (error) throw error;
+  res.json(fmtBook(data as DbBook));
+});
+
+router.delete("/books/:id", requireAuth, requireMgmt, async (req, res) => {
+  const db = getSupabase();
+  const { error } = await db.from("school_books").delete().eq("id", String(req.params["id"]));
+  if (error) throw error;
+  res.status(204).send();
+});
+
+/* ─── Library: Borrows ───────────────────────────────────────── */
+router.get("/borrows", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const role = req.user!.role;
+  const uid = String(req.user!.id);
+  let q = db.from("school_borrows").select("*");
+  if (!STAFF.has(role) && role !== "parent") q = q.eq("user_id", uid);
+  else {
+    if (req.query["userId"]) q = q.eq("user_id", String(req.query["userId"]));
+  }
+  if (req.query["bookId"]) q = q.eq("book_id", String(req.query["bookId"]));
+  if (req.query["status"]) q = q.eq("status", String(req.query["status"]));
+  const { data, error } = await q.order("borrowed_date", { ascending: false });
+  if (error) throw error;
+  const { data: users } = await db.from("school_users").select("id, name");
+  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
+  const bm = await buildBookMap(db);
+  res.json(((data ?? []) as DbBorrow[]).map((b) => fmtBorrow(b, um, bm)));
+});
+
+router.post("/borrows", requireAuth, async (req: AuthRequest, res) => {
+  const { bookId, userId, dueDate } = req.body as Record<string, string>;
+  if (!bookId || !dueDate) { res.status(400).json({ error: "bookId and dueDate required" }); return; }
+  const db = getSupabase();
+  const { data: book, error: be } = await db.from("school_books").select("available_copies").eq("id", bookId).maybeSingle();
+  if (be) throw be;
+  if (!book) { res.status(404).json({ error: "Book not found" }); return; }
+  if ((book as { available_copies: number }).available_copies < 1) { res.status(409).json({ error: "No copies available" }); return; }
+  const borrowUserId = STAFF.has(req.user!.role) && userId ? userId : String(req.user!.id);
+  await db.from("school_books").update({ available_copies: (book as { available_copies: number }).available_copies - 1 }).eq("id", bookId);
+  const { data, error } = await db.from("school_borrows").insert({ id: genId(), book_id: bookId, user_id: borrowUserId, due_date: dueDate, status: "borrowed", fine_amount: "0" }).select().single();
+  if (error) throw error;
+  const { data: users } = await db.from("school_users").select("id, name");
+  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
+  const bm = await buildBookMap(db);
+  res.status(201).json(fmtBorrow(data as DbBorrow, um, bm));
+});
+
+router.patch("/borrows/:id", requireAuth, requireStaff, async (req, res) => {
+  const id = String(req.params["id"]);
+  const { status, fineAmount, returnedDate } = req.body as Record<string, string>;
+  const db = getSupabase();
+  const { data: existing } = await db.from("school_borrows").select("*").eq("id", id).maybeSingle();
+  if (!existing) { res.status(404).json({ error: "Borrow record not found" }); return; }
+  const borrow = existing as DbBorrow;
+  const upd: Record<string, string | null> = {};
+  if (status) upd["status"] = status;
+  if (fineAmount !== undefined) upd["fine_amount"] = fineAmount;
+  if (returnedDate !== undefined) upd["returned_date"] = returnedDate || null;
+  if (status === "returned" && !borrow.returned_date) {
+    upd["returned_date"] = returnedDate || new Date().toISOString();
+    if (!borrow.returned_date) {
+      const { data: book } = await db.from("school_books").select("available_copies").eq("id", borrow.book_id).maybeSingle();
+      if (book) await db.from("school_books").update({ available_copies: (book as { available_copies: number }).available_copies + 1 }).eq("id", borrow.book_id);
+    }
+  }
+  const { data, error } = await db.from("school_borrows").update(upd).eq("id", id).select().single();
+  if (error) throw error;
+  const { data: users } = await db.from("school_users").select("id, name");
+  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
+  const bm = await buildBookMap(db);
+  res.json(fmtBorrow(data as DbBorrow, um, bm));
+});
+
+router.delete("/borrows/:id", requireAuth, requireMgmt, async (req, res) => {
+  const id = String(req.params["id"]);
+  const db = getSupabase();
+  const { data: existing } = await db.from("school_borrows").select("*").eq("id", id).maybeSingle();
+  if (existing) {
+    const borrow = existing as DbBorrow;
+    if (borrow.status === "borrowed") {
+      const { data: book } = await db.from("school_books").select("available_copies").eq("id", borrow.book_id).maybeSingle();
+      if (book) await db.from("school_books").update({ available_copies: (book as { available_copies: number }).available_copies + 1 }).eq("id", borrow.book_id);
+    }
+  }
+  const { error } = await db.from("school_borrows").delete().eq("id", id);
+  if (error) throw error;
+  res.status(204).send();
 });
 
 export default router;

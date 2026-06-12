@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   BarChart2, Users, BookOpen, ClipboardList, DollarSign,
-  Bell, Calendar, TrendingUp, LogOut, Home, X, Menu, RefreshCw, Briefcase, Mail,
+  Bell, Calendar, TrendingUp, LogOut, Home, X, Menu, RefreshCw, Briefcase, Mail, Library,
 } from "lucide-react";
 import {
   User, Course, LiveSession, Enrollment, Announcement, SchoolEvent, Payment, ReportOverview,
+  Attendance, Grade, Payroll, StaffRecord,
   apiGetUsers, apiGetCourses, apiGetSessions, apiGetEnrollments,
   apiGetAnnouncements, apiGetEvents, apiGetPayments, apiGetReportOverview,
+  apiGetAttendance, apiGetGrades, apiGetPayroll, apiGetStaff,
   clearSession, ROLE_LABELS, ROLE_COLORS,
 } from "./schoolApi";
 import OverviewTab from "./admin/OverviewTab";
@@ -22,8 +24,9 @@ import HRTab from "./admin/HRTab";
 import MessagingTab from "./admin/MessagingTab";
 import TimetableTab from "./admin/TimetableTab";
 import AssessmentsTab from "./admin/AssessmentsTab";
+import LibraryTab from "./admin/LibraryTab";
 
-type Tab = "overview" | "users" | "courses" | "enrollments" | "finance" | "hr" | "announcements" | "events" | "reports" | "messaging" | "timetable" | "assessments";
+type Tab = "overview" | "users" | "courses" | "enrollments" | "finance" | "hr" | "announcements" | "events" | "reports" | "messaging" | "timetable" | "assessments" | "library";
 
 interface NavItem { key: Tab; label: string; icon: React.ElementType; }
 
@@ -37,6 +40,7 @@ const NAV_GROUPS = [
       { key: "enrollments" as Tab, label: "Enrollments", icon: ClipboardList },
       { key: "timetable" as Tab, label: "Timetable & Exams", icon: Calendar },
       { key: "assessments" as Tab, label: "Assessments", icon: ClipboardList },
+      { key: "library" as Tab, label: "Library", icon: Library },
     ],
   },
   { label: "Finance", items: [{ key: "finance" as Tab, label: "Finance", icon: DollarSign }] },
@@ -58,6 +62,7 @@ const TAB_TITLES: Record<Tab, string> = {
   hr: "Human Resources & Payroll", messaging: "Messaging",
   timetable: "Timetable & Exam Scheduler",
   assessments: "Assessments & Quizzes",
+  library: "Library Management",
   announcements: "Announcements", events: "Events", reports: "Reports & Analytics",
 };
 
@@ -75,6 +80,11 @@ export default function AdminDashboard({ user }: { user: User }) {
   const [events, setEvents] = useState<SchoolEvent[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [report, setReport] = useState<ReportOverview | null>(null);
+  const [analyticsLoaded, setAnalyticsLoaded] = useState(false);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [grades, setGrades] = useState<Grade[]>([]);
+  const [payroll, setPayroll] = useState<Payroll[]>([]);
+  const [staff, setStaff] = useState<StaffRecord[]>([]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -114,7 +124,23 @@ export default function AdminDashboard({ user }: { user: User }) {
     if (rp.status === "fulfilled") setReport(rp.value);
   }, []);
 
-  const goTab = (t: Tab) => { setTab(t); setSidebarOpen(false); };
+  const loadAnalytics = useCallback(async () => {
+    if (analyticsLoaded) return;
+    const [at, gr, py, st] = await Promise.allSettled([
+      apiGetAttendance(), apiGetGrades(), apiGetPayroll(), apiGetStaff(),
+    ]);
+    if (at.status === "fulfilled") setAttendance(at.value);
+    if (gr.status === "fulfilled") setGrades(gr.value);
+    if (py.status === "fulfilled") setPayroll(py.value);
+    if (st.status === "fulfilled") setStaff(st.value);
+    setAnalyticsLoaded(true);
+  }, [analyticsLoaded]);
+
+  const goTab = (t: Tab) => {
+    setTab(t);
+    setSidebarOpen(false);
+    if (t === "reports") loadAnalytics();
+  };
 
   const roleLabel = ROLE_LABELS[user.role] || user.role;
   const roleColor = ROLE_COLORS[user.role] || "bg-gray-100 text-gray-700";
@@ -218,9 +244,10 @@ export default function AdminDashboard({ user }: { user: User }) {
                 {tab === "messaging" && <MessagingTab currentUser={user} />}
                 {tab === "timetable" && <TimetableTab courses={courses} users={users} />}
                 {tab === "assessments" && <AssessmentsTab courses={courses} users={users} currentUser={user} />}
+                {tab === "library" && <LibraryTab users={users} />}
                 {tab === "announcements" && <AnnouncementsTab announcements={announcements} currentUser={user} onRefresh={refreshAnnouncements} />}
                 {tab === "events" && <EventsTab events={events} onRefresh={refreshEvents} />}
-                {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} />}
+                {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} attendance={attendance} grades={grades} payroll={payroll} staff={staff} />}
               </>
             )}
           </div>

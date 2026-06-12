@@ -1,7 +1,10 @@
-import { useState } from "react";
-import { Plus, Trash2, Edit2, Eye, EyeOff, Search, X } from "lucide-react";
-import type { User } from "../schoolApi";
-import { apiCreateUser, apiUpdateUser, apiDeleteUser, ALL_ROLES, ROLE_LABELS, ROLE_COLORS } from "../schoolApi";
+import { useState, useEffect, useCallback } from "react";
+import { Plus, Trash2, Edit2, Eye, EyeOff, Search, X, Link, UserPlus } from "lucide-react";
+import type { User, ParentLink } from "../schoolApi";
+import {
+  apiCreateUser, apiUpdateUser, apiDeleteUser, ALL_ROLES, ROLE_LABELS, ROLE_COLORS,
+  apiGetParentLinks, apiCreateParentLink, apiDeleteParentLink,
+} from "../schoolApi";
 
 interface Props { users: User[]; currentUser: User; onRefresh: () => void; }
 
@@ -17,6 +20,11 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
   const [error, setError] = useState("");
   const [showPasswords, setShowPasswords] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [linkTarget, setLinkTarget] = useState<User | null>(null);
+  const [parentLinks, setParentLinks] = useState<ParentLink[]>([]);
+  const [linksLoading, setLinksLoading] = useState(false);
+  const [linkStudentId, setLinkStudentId] = useState("");
+  const [linkSaving, setLinkSaving] = useState(false);
 
   const filtered = users.filter(u => {
     const matchRole = roleFilter === "all" || u.role === roleFilter;
@@ -41,12 +49,45 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
   const del = async (id: string) => {
     if (id === currentUser.id) return;
     setDeleting(id);
-    try { await apiDeleteUser(id); onRefresh(); } catch { /* silent */ } finally { setDeleting(null); }
+    try { await apiDeleteUser(id); onRefresh(); } catch { } finally { setDeleting(null); }
   };
 
   const togglePw = (id: string) => setShowPasswords(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   const roleCount = (role: string) => users.filter(u => u.role === role).length;
+
+  const openLinks = useCallback(async (parent: User) => {
+    setLinkTarget(parent);
+    setLinkStudentId("");
+    setLinksLoading(true);
+    try {
+      const all = await apiGetParentLinks();
+      setParentLinks(all.filter(l => l.parentId === parent.id));
+    } finally { setLinksLoading(false); }
+  }, []);
+
+  const addLink = async () => {
+    if (!linkTarget || !linkStudentId) return;
+    setLinkSaving(true);
+    try {
+      const nl = await apiCreateParentLink({ parentId: linkTarget.id, studentId: linkStudentId });
+      const student = users.find(u => u.id === linkStudentId);
+      setParentLinks(prev => [...prev, { ...nl, studentName: student?.name || "" }]);
+      setLinkStudentId("");
+    } catch (e) { alert(e instanceof Error ? e.message : "Failed to add link"); }
+    finally { setLinkSaving(false); }
+  };
+
+  const removeLink = async (linkId: string) => {
+    try {
+      await apiDeleteParentLink(linkId);
+      setParentLinks(prev => prev.filter(l => l.id !== linkId));
+    } catch { }
+  };
+
+  const students = users.filter(u => u.role === "student" || u.role === "alumni");
+  const linkedStudentIds = new Set(parentLinks.map(l => l.studentId));
+  const availableStudents = students.filter(u => !linkedStudentIds.has(u.id));
 
   const Modal = ({ title, onClose }: { title: string; onClose: () => void }) => (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -89,6 +130,55 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
     </div>
   );
 
+  const LinkModal = () => (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 w-full sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="font-black text-lg text-[#0f0f0f]">Linked Students</h3>
+            <p className="text-sm text-gray-400">Parent: <span className="font-bold text-[#0d3d1a]">{linkTarget?.name}</span></p>
+          </div>
+          <button onClick={() => setLinkTarget(null)} className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Currently Linked</p>
+          {linksLoading ? (
+            <div className="text-center py-4"><div className="w-5 h-5 border-2 border-[#1a6b2a] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+          ) : parentLinks.length === 0 ? (
+            <p className="text-gray-400 text-sm py-2 text-center">No students linked yet.</p>
+          ) : parentLinks.map(l => (
+            <div key={l.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+              <div>
+                <p className="text-sm font-bold text-[#0f0f0f]">{l.studentName || l.studentId}</p>
+              </div>
+              <button onClick={() => removeLink(l.id)} className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center transition-colors">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {availableStudents.length > 0 && (
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Link a Student</p>
+            <div className="flex gap-2">
+              <select value={linkStudentId} onChange={e => setLinkStudentId(e.target.value)}
+                className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:border-[#1a6b2a] focus:outline-none">
+                <option value="">Select student…</option>
+                {availableStudents.map(s => <option key={s.id} value={s.id}>{s.name} (@{s.username})</option>)}
+              </select>
+              <button onClick={addLink} disabled={!linkStudentId || linkSaving}
+                className="flex items-center gap-1.5 bg-[#1a6b2a] disabled:bg-gray-200 text-white font-black px-4 py-2.5 rounded-xl text-sm transition-colors">
+                <UserPlus className="w-4 h-4" />{linkSaving ? "…" : "Add"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-5">
@@ -126,6 +216,9 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
                 <button onClick={() => togglePw(u.id)}>{showPasswords.has(u.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}</button>
               </div>
               <div className="flex gap-2">
+                {u.role === "parent" && (
+                  <button onClick={() => openLinks(u)} className="w-8 h-8 rounded-lg bg-pink-50 text-pink-500 flex items-center justify-center"><Link className="w-3.5 h-3.5" /></button>
+                )}
                 <button onClick={() => openEdit(u)} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center"><Edit2 className="w-3.5 h-3.5" /></button>
                 {u.id !== currentUser.id && (
                   <button onClick={() => del(u.id)} disabled={deleting === u.id} className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center disabled:opacity-40">
@@ -168,6 +261,12 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-1.5">
+                      {u.role === "parent" && (
+                        <button onClick={() => openLinks(u)} title="Manage linked students"
+                          className="w-7 h-7 rounded-lg bg-pink-50 hover:bg-pink-100 text-pink-500 flex items-center justify-center transition-colors">
+                          <Link className="w-3 h-3" />
+                        </button>
+                      )}
                       <button onClick={() => openEdit(u)} className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-500 flex items-center justify-center transition-colors"><Edit2 className="w-3 h-3" /></button>
                       {u.id !== currentUser.id && (
                         <button onClick={() => del(u.id)} disabled={deleting === u.id} className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center transition-colors disabled:opacity-40">
@@ -186,6 +285,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
 
       {showAdd && <Modal title="Add New User" onClose={() => setShowAdd(false)} />}
       {editTarget && <Modal title={`Edit — ${editTarget.name}`} onClose={() => setEditTarget(null)} />}
+      {linkTarget && <LinkModal />}
     </div>
   );
 }
