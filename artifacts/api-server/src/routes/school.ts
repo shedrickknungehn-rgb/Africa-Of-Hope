@@ -708,4 +708,125 @@ router.delete("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
   res.status(204).send();
 });
 
+/* ─── Timetable ──────────────────────────────────────────────── */
+interface DbTimetable { id: string; course_id: string; day_of_week: string; period: string; room: string; start_time: string; end_time: string; created_at: string; }
+
+const buildCourseMap = async (): Promise<Map<string, { title: string; instructorId: string }>> => {
+  const db = getSupabase();
+  const { data } = await db.from("school_courses").select("id, title, instructor_id");
+  return new Map<string, { title: string; instructorId: string }>((data ?? []).map((c: { id: string; title: string; instructor_id: string }) => [c.id, { title: c.title, instructorId: String(c.instructor_id) }]));
+};
+
+const fmtSlot = (s: DbTimetable, cm: Map<string, { title: string; instructorId: string }>, um: Map<string, string>) => ({
+  id: s.id, courseId: s.course_id,
+  courseTitle: cm.get(s.course_id)?.title || "",
+  instructorName: um.get(cm.get(s.course_id)?.instructorId || "") || "",
+  dayOfWeek: s.day_of_week, period: s.period, room: s.room,
+  startTime: s.start_time, endTime: s.end_time, createdAt: s.created_at,
+});
+
+router.get("/timetable", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  let q = db.from("school_timetable").select("*");
+  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
+  const { data, error } = await q.order("created_at", { ascending: true });
+  if (error) throw error;
+  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
+  res.json(((data ?? []) as DbTimetable[]).map((s) => fmtSlot(s, cm, um)));
+});
+
+router.post("/timetable", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
+  const { courseId, dayOfWeek, period, room, startTime, endTime } = req.body as Record<string, string>;
+  if (!courseId || !dayOfWeek) { res.status(400).json({ error: "courseId and dayOfWeek required" }); return; }
+  const db = getSupabase();
+  const { data, error } = await db.from("school_timetable").insert({ id: genId(), course_id: courseId, day_of_week: dayOfWeek, period: period || "", room: room || "", start_time: startTime || "", end_time: endTime || "" }).select().single();
+  if (error) throw error;
+  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
+  res.status(201).json(fmtSlot(data as DbTimetable, cm, um));
+});
+
+router.patch("/timetable/:id", requireAuth, requireMgmt, async (req, res) => {
+  const id = String(req.params["id"]);
+  const { courseId, dayOfWeek, period, room, startTime, endTime } = req.body as Record<string, string>;
+  const upd: Record<string, string> = {};
+  if (courseId) upd["course_id"] = courseId;
+  if (dayOfWeek) upd["day_of_week"] = dayOfWeek;
+  if (period !== undefined) upd["period"] = period;
+  if (room !== undefined) upd["room"] = room;
+  if (startTime !== undefined) upd["start_time"] = startTime;
+  if (endTime !== undefined) upd["end_time"] = endTime;
+  const db = getSupabase();
+  const { data, error } = await db.from("school_timetable").update(upd).eq("id", id).select().single();
+  if (error) throw error;
+  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
+  res.json(fmtSlot(data as DbTimetable, cm, um));
+});
+
+router.delete("/timetable/:id", requireAuth, requireMgmt, async (req, res) => {
+  const db = getSupabase();
+  const { error } = await db.from("school_timetable").delete().eq("id", String(req.params["id"]));
+  if (error) throw error;
+  res.status(204).send();
+});
+
+/* ─── Exams ──────────────────────────────────────────────────── */
+interface DbExam { id: string; course_id: string; title: string; exam_date: string; start_time: string; end_time: string; room: string; invigilator_id: string; notes: string; created_at: string; }
+
+const fmtExam = (e: DbExam, cm: Map<string, { title: string; instructorId: string }>, um: Map<string, string>) => ({
+  id: e.id, courseId: e.course_id,
+  courseTitle: cm.get(e.course_id)?.title || "",
+  title: e.title, examDate: e.exam_date,
+  startTime: e.start_time, endTime: e.end_time, room: e.room,
+  invigilatorId: e.invigilator_id,
+  invigilatorName: um.get(e.invigilator_id) || "",
+  notes: e.notes, createdAt: e.created_at,
+});
+
+router.get("/exams", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  let q = db.from("school_exams").select("*");
+  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
+  const { data, error } = await q.order("exam_date", { ascending: true });
+  if (error) throw error;
+  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
+  res.json(((data ?? []) as DbExam[]).map((e) => fmtExam(e, cm, um)));
+});
+
+router.post("/exams", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
+  const { courseId, title, examDate, startTime, endTime, room, invigilatorId, notes } = req.body as Record<string, string>;
+  if (!courseId || !title || !examDate) { res.status(400).json({ error: "courseId, title and examDate required" }); return; }
+  const db = getSupabase();
+  const { data, error } = await db.from("school_exams").insert({ id: genId(), course_id: courseId, title, exam_date: examDate, start_time: startTime || "", end_time: endTime || "", room: room || "", invigilator_id: invigilatorId || "", notes: notes || "" }).select().single();
+  if (error) throw error;
+  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
+  res.status(201).json(fmtExam(data as DbExam, cm, um));
+});
+
+router.patch("/exams/:id", requireAuth, requireMgmt, async (req, res) => {
+  const id = String(req.params["id"]);
+  const { courseId, title, examDate, startTime, endTime, room, invigilatorId, notes } = req.body as Record<string, string>;
+  const upd: Record<string, string> = {};
+  if (courseId) upd["course_id"] = courseId;
+  if (title) upd["title"] = title;
+  if (examDate) upd["exam_date"] = examDate;
+  if (startTime !== undefined) upd["start_time"] = startTime;
+  if (endTime !== undefined) upd["end_time"] = endTime;
+  if (room !== undefined) upd["room"] = room;
+  if (invigilatorId !== undefined) upd["invigilator_id"] = invigilatorId;
+  if (notes !== undefined) upd["notes"] = notes;
+  const db = getSupabase();
+  const { data, error } = await db.from("school_exams").update(upd).eq("id", id).select().single();
+  if (error) throw error;
+  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
+  res.json(fmtExam(data as DbExam, cm, um));
+});
+
+router.delete("/exams/:id", requireAuth, requireMgmt, async (req, res) => {
+  const db = getSupabase();
+  const { error } = await db.from("school_exams").delete().eq("id", String(req.params["id"]));
+  if (error) throw error;
+  res.status(204).send();
+});
+
 export default router;
+

@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2, Menu, X, ClipboardCheck, GraduationCap, Plus, Trash2, Bell, Mail } from "lucide-react";
+import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2, Menu, X, ClipboardCheck, GraduationCap, Plus, Trash2, Bell, Mail, Calendar, Clock, AlertTriangle } from "lucide-react";
 import {
-  User, Course, Enrollment, Grade, Attendance, Announcement,
+  User, Course, Enrollment, Grade, Attendance, Announcement, TimetableSlot, Exam,
   apiGetCourses, apiGetUsers, apiGetEnrollments, apiGetGrades, apiGetAttendance,
   apiCreateGrade, apiDeleteGrade, apiSaveAttendance, apiUpdateCourseMaterials, apiGetAnnouncements,
+  apiGetTimetable, apiGetExams,
   clearSession,
 } from "./schoolApi";
 import MessagingTab from "./admin/MessagingTab";
 
-type Tab = "overview" | "classes" | "roster" | "attendance" | "grades" | "materials" | "announcements" | "inbox";
+type Tab = "overview" | "classes" | "roster" | "attendance" | "grades" | "materials" | "schedule" | "announcements" | "inbox";
 
 const ATT_STATUSES = ["present", "absent", "late", "excused"] as const;
 const ATT_COLORS: Record<string, string> = {
@@ -29,6 +30,8 @@ export default function InstructorDashboard({ user }: { user: User }) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [timetable, setTimetable] = useState<TimetableSlot[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
 
   const isAssistant = user.role === "assistant";
 
@@ -38,6 +41,8 @@ export default function InstructorDashboard({ user }: { user: User }) {
     apiGetEnrollments().then(setEnrollments).catch(() => {});
     apiGetGrades().then(setGrades).catch(() => {});
     apiGetAnnouncements().then(setAnnouncements).catch(() => {});
+    apiGetTimetable().then(setTimetable).catch(() => {});
+    apiGetExams().then(setExams).catch(() => {});
   };
   useEffect(loadAll, []);
 
@@ -68,6 +73,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
     { key: "attendance" as Tab, label: "Attendance", icon: ClipboardCheck },
     { key: "grades" as Tab, label: "Grades", icon: GraduationCap },
     { key: "materials" as Tab, label: "Materials", icon: FileText },
+    { key: "schedule" as Tab, label: "Schedule", icon: Calendar },
     { key: "inbox" as Tab, label: "Inbox", icon: Mail },
     { key: "announcements" as Tab, label: "Announcements", icon: Bell },
   ];
@@ -133,6 +139,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
           {tab === "attendance" && <AttendanceView myCourses={myCourses} rosterFor={rosterFor} />}
           {tab === "grades" && <GradesView myCourses={myCourses} rosterFor={rosterFor} grades={grades} onRefresh={() => apiGetGrades().then(setGrades).catch(() => {})} />}
           {tab === "materials" && <MaterialsView myCourses={myCourses} onRefresh={() => apiGetCourses().then(setCourses).catch(() => {})} />}
+          {tab === "schedule" && <InstructorScheduleView myCourseIds={myCourseIds} timetable={timetable} exams={exams} />}
           {tab === "inbox" && <MessagingTab currentUser={user} />}
           {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
         </div>
@@ -416,6 +423,97 @@ function MaterialsView({ myCourses, onRefresh }: { myCourses: Course[]; onRefres
           ))}
         </div>
       ) : <Empty text="No materials uploaded for this class yet." />}
+    </div>
+  );
+}
+
+/* ─── Schedule ───────────────────────────────────────────────── */
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_SHORT: Record<string, string> = { Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu", Friday: "Fri", Saturday: "Sat" };
+
+function InstructorScheduleView({ myCourseIds, timetable, exams }: { myCourseIds: Set<string>; timetable: TimetableSlot[]; exams: Exam[] }) {
+  const mySlots = timetable.filter((s) => myCourseIds.has(s.courseId));
+  const myExams = exams.filter((e) => myCourseIds.has(e.courseId));
+  const now = Date.now();
+  const upcoming = myExams.filter((e) => new Date(e.examDate).getTime() >= now);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">Weekly Timetable</h3>
+        {mySlots.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 shadow-sm text-center text-gray-400">
+            <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p>No timetable slots for your courses yet.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+              {DAYS.map((day) => {
+                const daySlots = mySlots.filter((s) => s.dayOfWeek === day);
+                return (
+                  <div key={day} className="bg-white p-3">
+                    <p className="text-[10px] font-black uppercase text-gray-400 mb-2">{DAY_SHORT[day]}</p>
+                    {daySlots.length === 0 ? (
+                      <p className="text-[10px] text-gray-200">—</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {daySlots.map((s) => (
+                          <div key={s.id} className="bg-[#0d3d1a] rounded-lg p-2 text-white">
+                            <p className="text-[10px] font-black truncate leading-tight">{s.courseTitle || s.courseId}</p>
+                            {s.period && <p className="text-[9px] opacity-70">{s.period}</p>}
+                            {s.startTime && <p className="text-[9px] opacity-70">{s.startTime}{s.endTime ? `–${s.endTime}` : ""}</p>}
+                            {s.room && <p className="text-[9px] opacity-70">📍{s.room}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 px-1">
+          Upcoming Exams {upcoming.length > 0 && `(${upcoming.length})`}
+        </h3>
+        {upcoming.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 shadow-sm text-center text-gray-400">
+            <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p>No upcoming exams for your courses.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {upcoming.map((e) => {
+              const d = new Date(e.examDate);
+              const daysLeft = Math.ceil((d.getTime() - now) / 86400000);
+              return (
+                <div key={e.id} className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm flex items-start gap-4">
+                  <div className="w-12 h-12 bg-[#d4a017] rounded-xl flex flex-col items-center justify-center text-white flex-shrink-0">
+                    <span className="text-[9px] font-bold uppercase">{d.toLocaleString("en", { month: "short" })}</span>
+                    <span className="text-lg font-black leading-none">{d.getDate()}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-black text-[#0f0f0f]">{e.title}</p>
+                      {daysLeft <= 7 && <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">{daysLeft}d away</span>}
+                    </div>
+                    <p className="text-sm text-gray-500">{e.courseTitle}</p>
+                    <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-400">
+                      {e.startTime && <span>⏰ {e.startTime}{e.endTime ? `–${e.endTime}` : ""}</span>}
+                      {e.room && <span>📍 {e.room}</span>}
+                    </div>
+                    {e.notes && <p className="text-xs text-gray-400 mt-1 italic">{e.notes}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

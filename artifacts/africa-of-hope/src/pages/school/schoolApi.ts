@@ -262,6 +262,48 @@ export const apiGetPayroll = (params?: { userId?: string }) => {
 export const apiCreatePayroll = (data: { userId: string; period: string; gross?: string; deductions?: string; net?: string; notes?: string }) => apiFetch<Payroll>("/payroll", { method: "POST", body: JSON.stringify(data) });
 export const apiUpdatePayroll = (id: string, updates: Partial<Payroll>) => apiFetch<Payroll>(`/payroll/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
 
+/* ─── Timetable ──────────────────────────────────────────────── */
+export interface TimetableSlot {
+  id: string; courseId: string; courseTitle?: string; instructorName?: string;
+  dayOfWeek: string; period: string; room: string;
+  startTime: string; endTime: string; createdAt: string;
+}
+
+export const apiGetTimetable = (params?: { courseId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.courseId) q.set("courseId", params.courseId);
+  const qs = q.toString();
+  return apiFetch<TimetableSlot[]>(`/timetable${qs ? `?${qs}` : ""}`);
+};
+export const apiCreateTimetableSlot = (data: Omit<TimetableSlot, "id" | "createdAt" | "courseTitle" | "instructorName">) =>
+  apiFetch<TimetableSlot>("/timetable", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateTimetableSlot = (id: string, updates: Partial<TimetableSlot>) =>
+  apiFetch<TimetableSlot>(`/timetable/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+export const apiDeleteTimetableSlot = (id: string) =>
+  apiFetch<void>(`/timetable/${id}`, { method: "DELETE" });
+
+/* ─── Exams ──────────────────────────────────────────────────── */
+export interface Exam {
+  id: string; courseId: string; courseTitle?: string;
+  title: string; examDate: string;
+  startTime: string; endTime: string; room: string;
+  invigilatorId: string; invigilatorName?: string;
+  notes: string; createdAt: string;
+}
+
+export const apiGetExams = (params?: { courseId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.courseId) q.set("courseId", params.courseId);
+  const qs = q.toString();
+  return apiFetch<Exam[]>(`/exams${qs ? `?${qs}` : ""}`);
+};
+export const apiCreateExam = (data: Omit<Exam, "id" | "createdAt" | "courseTitle" | "invigilatorName">) =>
+  apiFetch<Exam>("/exams", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateExam = (id: string, updates: Partial<Exam>) =>
+  apiFetch<Exam>(`/exams/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+export const apiDeleteExam = (id: string) =>
+  apiFetch<void>(`/exams/${id}`, { method: "DELETE" });
+
 /* ─── Messages ───────────────────────────────────────────────── */
 export interface Message {
   id: string; senderId: string; senderName: string;
