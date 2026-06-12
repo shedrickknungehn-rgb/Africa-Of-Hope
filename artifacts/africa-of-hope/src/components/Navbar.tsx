@@ -1,16 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, Heart, GraduationCap, ChevronRight } from "lucide-react";
+import { Menu, X, Heart, GraduationCap, ChevronRight, ChevronDown } from "lucide-react";
 import { openDonate } from "@/lib/donate";
 
-const navLinks = [
+const mainLinks = [
   { href: "/", label: "Home" },
   { href: "/about", label: "About Us" },
+];
+
+const departments = [
   { href: "/charity", label: "Charity" },
   { href: "/education", label: "Education" },
   { href: "/healthcare", label: "Health-Care" },
   { href: "/media", label: "Media / TV" },
   { href: "/advocacy", label: "Advocacy" },
+];
+
+const afterLinks = [
+  { href: "/team", label: "Our Team" },
   { href: "/gallery", label: "Gallery" },
   { href: "/contact", label: "Contact" },
 ];
@@ -21,8 +28,87 @@ const TICKER_TEXT =
   "Contact: 0760599659 / Afrohope033@gmail.com | RIA Highway, Schiefflin Township, Lower Margibi-County, Liberia | " +
   "Charity · Education · Health-Care · Media / TV · Advocacy | ";
 
+function NavLink({ href, label, location }: { href: string; label: string; location: string }) {
+  return (
+    <Link
+      href={href}
+      className={`px-2.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
+        location === href
+          ? "text-[#d4a017] bg-white/10"
+          : "text-white/80 hover:text-[#d4a017] hover:bg-white/10"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function DepartmentsMenu({ location }: { location: string }) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isActive = departments.some((d) => d.href === location);
+
+  const handleEnter = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+  const handleLeave = () => {
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  return (
+    <div className="relative" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+      <button
+        className={`flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
+          isActive || open
+            ? "text-[#d4a017] bg-white/10"
+            : "text-white/80 hover:text-[#d4a017] hover:bg-white/10"
+        }`}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="true"
+        aria-expanded={open}
+      >
+        Departments
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+      <div
+        className={`absolute left-0 top-full pt-2 z-50 transition-all duration-200 ${
+          open ? "opacity-100 visible translate-y-0" : "opacity-0 invisible -translate-y-1"
+        }`}
+      >
+        <div className="w-52 bg-[#0d3d1a] border border-white/10 rounded-xl shadow-2xl py-2 overflow-hidden">
+          <p className="text-white/30 text-[10px] uppercase tracking-widest font-bold px-4 pt-1 pb-2">
+            Our Programs
+          </p>
+          {departments.map((d) => (
+            <Link
+              key={d.href}
+              href={d.href}
+              onClick={() => setOpen(false)}
+              className={`block px-4 py-2.5 text-xs font-semibold transition-colors ${
+                location === d.href
+                  ? "text-[#d4a017] bg-white/10"
+                  : "text-white/80 hover:text-[#d4a017] hover:bg-white/10"
+              }`}
+            >
+              {d.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const [deptOpen, setDeptOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [location] = useLocation();
 
@@ -36,6 +122,11 @@ export default function Navbar() {
     setOpen(false);
   }, [location]);
 
+  // Expand the Departments group in the drawer when on a department page
+  useEffect(() => {
+    if (departments.some((d) => d.href === location)) setDeptOpen(true);
+  }, [location]);
+
   // Lock body scroll when menu open
   useEffect(() => {
     if (open) {
@@ -43,7 +134,9 @@ export default function Navbar() {
     } else {
       document.body.style.overflow = "";
     }
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [open]);
 
   return (
@@ -77,18 +170,12 @@ export default function Navbar() {
 
             {/* Desktop Nav — xl+ */}
             <div className="hidden xl:flex items-center gap-0.5">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`px-2.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
-                    location === link.href
-                      ? "text-[#d4a017] bg-white/10"
-                      : "text-white/80 hover:text-[#d4a017] hover:bg-white/10"
-                  }`}
-                >
-                  {link.label}
-                </Link>
+              {mainLinks.map((link) => (
+                <NavLink key={link.href} {...link} location={location} />
+              ))}
+              <DepartmentsMenu location={location} />
+              {afterLinks.map((link) => (
+                <NavLink key={link.href} {...link} location={location} />
               ))}
               <Link
                 href="/school"
@@ -108,16 +195,12 @@ export default function Navbar() {
 
             {/* Large tablet Nav — lg–xl */}
             <div className="hidden lg:flex xl:hidden items-center gap-0.5">
-              {navLinks.slice(0, 7).map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`px-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
-                    location === link.href ? "text-[#d4a017] bg-white/10" : "text-white/80 hover:text-[#d4a017] hover:bg-white/10"
-                  }`}
-                >
-                  {link.label}
-                </Link>
+              {mainLinks.map((link) => (
+                <NavLink key={link.href} {...link} location={location} />
+              ))}
+              <DepartmentsMenu location={location} />
+              {afterLinks.map((link) => (
+                <NavLink key={link.href} {...link} location={location} />
               ))}
               <button
                 onClick={openDonate}
@@ -189,7 +272,54 @@ export default function Navbar() {
         {/* Nav links */}
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
           <p className="text-white/30 text-[10px] uppercase tracking-widest font-bold px-3 mb-2">Navigation</p>
-          {navLinks.map((link) => (
+          {mainLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition-colors touch-manipulation ${
+                location === link.href
+                  ? "text-[#d4a017] bg-white/10 font-black"
+                  : "text-white/80 hover:text-[#d4a017] hover:bg-white/8 active:bg-white/15"
+              }`}
+            >
+              {link.label}
+              {location === link.href && <ChevronRight className="w-4 h-4" />}
+            </Link>
+          ))}
+
+          {/* Departments accordion */}
+          <button
+            onClick={() => setDeptOpen((v) => !v)}
+            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition-colors touch-manipulation ${
+              departments.some((d) => d.href === location)
+                ? "text-[#d4a017] bg-white/10 font-black"
+                : "text-white/80 hover:text-[#d4a017] hover:bg-white/8 active:bg-white/15"
+            }`}
+            aria-expanded={deptOpen}
+          >
+            Departments
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${deptOpen ? "rotate-180" : ""}`} />
+          </button>
+          <div className={`overflow-hidden transition-all duration-300 ${deptOpen ? "max-h-96" : "max-h-0"}`}>
+            <div className="pl-3 space-y-1 py-1">
+              {departments.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-colors touch-manipulation border-l-2 ${
+                    location === link.href
+                      ? "text-[#d4a017] bg-white/10 border-[#d4a017]"
+                      : "text-white/70 border-white/10 hover:text-[#d4a017] hover:bg-white/8 active:bg-white/15"
+                  }`}
+                >
+                  {link.label}
+                  {location === link.href && <ChevronRight className="w-4 h-4" />}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {afterLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}

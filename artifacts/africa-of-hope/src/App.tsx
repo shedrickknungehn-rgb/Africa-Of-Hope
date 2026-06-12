@@ -15,6 +15,7 @@ import MediaTV from "@/pages/MediaTV";
 import Contact from "@/pages/Contact";
 import Gallery from "@/pages/Gallery";
 import Advocacy from "@/pages/Advocacy";
+import Team from "@/pages/Team";
 import SchoolLogin from "@/pages/school/SchoolLogin";
 import SchoolDashboard from "@/pages/school/SchoolDashboard";
 import LiveClass from "@/pages/school/LiveClass";
@@ -41,6 +42,7 @@ function AppRoutes() {
         <Route path="/healthcare" component={Healthcare} />
         <Route path="/media" component={MediaTV} />
         <Route path="/advocacy" component={Advocacy} />
+        <Route path="/team" component={Team} />
         <Route path="/gallery" component={Gallery} />
         <Route path="/contact" component={Contact} />
         <Route component={NotFound} />
