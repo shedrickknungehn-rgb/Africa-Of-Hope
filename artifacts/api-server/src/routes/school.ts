@@ -616,4 +616,89 @@ router.get("/reports/overview", requireAuth, requireMgmt, async (_req, res) => {
   });
 });
 
+/* ─── Messages ───────────────────────────────────────────────── */
+interface DbMessage { id: string; sender_id: string; recipient_id: string; subject: string; body: string; is_read: boolean; parent_id: string; created_at: string; }
+
+const buildUserMap = async (): Promise<Map<string, string>> => {
+  const db = getSupabase();
+  const { data } = await db.from("school_users").select("id, name");
+  return new Map<string, string>((data ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
+};
+
+const fmtMsg = (m: DbMessage, um: Map<string, string>) => ({
+  id: m.id,
+  senderId: m.sender_id,
+  senderName: um.get(m.sender_id) || "Unknown",
+  recipientId: m.recipient_id,
+  recipientName: um.get(m.recipient_id) || "Unknown",
+  subject: m.subject,
+  body: m.body,
+  isRead: m.is_read,
+  parentId: m.parent_id,
+  createdAt: m.created_at,
+});
+
+router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const isAdmin = MGMT.has(req.user!.role);
+  const showAll = req.query["all"] === "true" && isAdmin;
+  const uid = String(req.user!.id);
+  const box = String(req.query["box"] || "all");
+
+  let q = db.from("school_messages").select("*");
+  if (!showAll) {
+    if (box === "inbox") q = q.eq("recipient_id", uid);
+    else if (box === "sent") q = q.eq("sender_id", uid);
+    else q = q.or(`sender_id.eq.${uid},recipient_id.eq.${uid}`);
+  }
+  const { data, error } = await q.order("created_at", { ascending: false });
+  if (error) throw error;
+  const um = await buildUserMap();
+  res.json(((data ?? []) as DbMessage[]).map((m) => fmtMsg(m, um)));
+});
+
+router.post("/messages", requireAuth, async (req: AuthRequest, res) => {
+  const { recipientId, subject, body, parentId } = req.body as { recipientId?: string; subject?: string; body?: string; parentId?: string };
+  if (!recipientId || !body) { res.status(400).json({ error: "recipientId and body required" }); return; }
+  const db = getSupabase();
+  const { data, error } = await db.from("school_messages").insert({
+    id: genId(),
+    sender_id: String(req.user!.id),
+    recipient_id: recipientId,
+    subject: subject || "",
+    body,
+    is_read: false,
+    parent_id: parentId || "",
+  }).select().single();
+  if (error) throw error;
+  const um = await buildUserMap();
+  res.status(201).json(fmtMsg(data as DbMessage, um));
+});
+
+router.patch("/messages/:id/read", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const { data: msg } = await db.from("school_messages").select("recipient_id").eq("id", String(req.params["id"])).maybeSingle();
+  if (!msg || String((msg as { recipient_id: string }).recipient_id) !== String(req.user!.id)) {
+    res.status(403).json({ error: "Forbidden" }); return;
+  }
+  const { data, error } = await db.from("school_messages").update({ is_read: true }).eq("id", String(req.params["id"])).select().single();
+  if (error) throw error;
+  const um = await buildUserMap();
+  res.json(fmtMsg(data as DbMessage, um));
+});
+
+router.delete("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const { data: msg } = await db.from("school_messages").select("sender_id, recipient_id").eq("id", String(req.params["id"])).maybeSingle();
+  if (!msg) { res.status(404).json({ error: "Not found" }); return; }
+  const m = msg as { sender_id: string; recipient_id: string };
+  const uid = String(req.user!.id);
+  if (m.sender_id !== uid && m.recipient_id !== uid && !MGMT.has(req.user!.role)) {
+    res.status(403).json({ error: "Forbidden" }); return;
+  }
+  const { error } = await db.from("school_messages").delete().eq("id", String(req.params["id"]));
+  if (error) throw error;
+  res.status(204).send();
+});
+
 export default router;

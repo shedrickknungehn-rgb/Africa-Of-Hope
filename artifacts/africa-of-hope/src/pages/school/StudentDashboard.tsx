@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar } from "lucide-react";
+import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar, Mail } from "lucide-react";
 import {
   User, Course, Enrollment, Grade, Attendance, Payment, Announcement, SchoolEvent,
   apiGetCourses, apiGetEnrollments, apiGetGrades, apiGetAttendance, apiGetPayments,
   apiGetAnnouncements, apiGetEvents, clearSession,
 } from "./schoolApi";
+import MessagingTab from "./admin/MessagingTab";
 
-type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "announcements" | "events";
+type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "inbox" | "announcements" | "events";
 
 export default function StudentDashboard({ user }: { user: User }) {
   const [, navigate] = useLocation();
@@ -49,6 +50,7 @@ export default function StudentDashboard({ user }: { user: User }) {
     { key: "transcript" as Tab, label: "Grades & Transcript", icon: GraduationCap },
     { key: "attendance" as Tab, label: "Attendance", icon: ClipboardCheck },
     { key: "finance" as Tab, label: "Finance", icon: DollarSign },
+    { key: "inbox" as Tab, label: "Inbox", icon: Mail },
     { key: "announcements" as Tab, label: "Announcements", icon: Bell },
     { key: "events" as Tab, label: "Events", icon: Calendar },
   ];
@@ -109,6 +111,7 @@ export default function StudentDashboard({ user }: { user: User }) {
           {tab === "transcript" && <TranscriptView grades={grades} courses={courses} />}
           {tab === "attendance" && <AttendanceView attendance={attendance} />}
           {tab === "finance" && <FinanceView payments={payments} />}
+          {tab === "inbox" && <MessagingTab currentUser={user} />}
           {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
           {tab === "events" && <EventsView events={events} />}
         </div>

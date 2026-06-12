@@ -262,6 +262,28 @@ export const apiGetPayroll = (params?: { userId?: string }) => {
 export const apiCreatePayroll = (data: { userId: string; period: string; gross?: string; deductions?: string; net?: string; notes?: string }) => apiFetch<Payroll>("/payroll", { method: "POST", body: JSON.stringify(data) });
 export const apiUpdatePayroll = (id: string, updates: Partial<Payroll>) => apiFetch<Payroll>(`/payroll/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
 
+/* ─── Messages ───────────────────────────────────────────────── */
+export interface Message {
+  id: string; senderId: string; senderName: string;
+  recipientId: string; recipientName: string;
+  subject: string; body: string; isRead: boolean;
+  parentId: string; createdAt: string;
+}
+
+export const apiGetMessages = (params?: { box?: "inbox" | "sent" | "all"; all?: boolean }) => {
+  const q = new URLSearchParams();
+  if (params?.box) q.set("box", params.box);
+  if (params?.all) q.set("all", "true");
+  const qs = q.toString();
+  return apiFetch<Message[]>(`/messages${qs ? `?${qs}` : ""}`);
+};
+export const apiSendMessage = (data: { recipientId: string; subject?: string; body: string; parentId?: string }) =>
+  apiFetch<Message>("/messages", { method: "POST", body: JSON.stringify(data) });
+export const apiMarkMessageRead = (id: string) =>
+  apiFetch<Message>(`/messages/${id}/read`, { method: "PATCH" });
+export const apiDeleteMessage = (id: string) =>
+  apiFetch<void>(`/messages/${id}`, { method: "DELETE" });
+
 /* ─── Reports ────────────────────────────────────────────────── */
 export const apiGetReportOverview = () => apiFetch<ReportOverview>("/reports/overview");
 

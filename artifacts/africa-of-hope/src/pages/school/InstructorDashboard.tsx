@@ -1,14 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2, Menu, X, ClipboardCheck, GraduationCap, Plus, Trash2, Bell } from "lucide-react";
+import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2, Menu, X, ClipboardCheck, GraduationCap, Plus, Trash2, Bell, Mail } from "lucide-react";
 import {
   User, Course, Enrollment, Grade, Attendance, Announcement,
   apiGetCourses, apiGetUsers, apiGetEnrollments, apiGetGrades, apiGetAttendance,
   apiCreateGrade, apiDeleteGrade, apiSaveAttendance, apiUpdateCourseMaterials, apiGetAnnouncements,
   clearSession,
 } from "./schoolApi";
+import MessagingTab from "./admin/MessagingTab";
 
-type Tab = "overview" | "classes" | "roster" | "attendance" | "grades" | "materials" | "announcements";
+type Tab = "overview" | "classes" | "roster" | "attendance" | "grades" | "materials" | "announcements" | "inbox";
 
 const ATT_STATUSES = ["present", "absent", "late", "excused"] as const;
 const ATT_COLORS: Record<string, string> = {
@@ -67,6 +68,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
     { key: "attendance" as Tab, label: "Attendance", icon: ClipboardCheck },
     { key: "grades" as Tab, label: "Grades", icon: GraduationCap },
     { key: "materials" as Tab, label: "Materials", icon: FileText },
+    { key: "inbox" as Tab, label: "Inbox", icon: Mail },
     { key: "announcements" as Tab, label: "Announcements", icon: Bell },
   ];
 
@@ -131,6 +133,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
           {tab === "attendance" && <AttendanceView myCourses={myCourses} rosterFor={rosterFor} />}
           {tab === "grades" && <GradesView myCourses={myCourses} rosterFor={rosterFor} grades={grades} onRefresh={() => apiGetGrades().then(setGrades).catch(() => {})} />}
           {tab === "materials" && <MaterialsView myCourses={myCourses} onRefresh={() => apiGetCourses().then(setCourses).catch(() => {})} />}
+          {tab === "inbox" && <MessagingTab currentUser={user} />}
           {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
         </div>
       </div>
