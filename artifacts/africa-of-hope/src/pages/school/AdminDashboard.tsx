@@ -6,10 +6,10 @@ import {
 } from "lucide-react";
 import {
   User, Course, LiveSession, Enrollment, Announcement, SchoolEvent, Payment, ReportOverview,
-  Attendance, Grade, Payroll, StaffRecord,
+  Attendance, Grade, Payroll, StaffRecord, LeaveRequest,
   apiGetUsers, apiGetCourses, apiGetSessions, apiGetEnrollments,
   apiGetAnnouncements, apiGetEvents, apiGetPayments, apiGetReportOverview,
-  apiGetAttendance, apiGetGrades, apiGetPayroll, apiGetStaff,
+  apiGetAttendance, apiGetGrades, apiGetPayroll, apiGetStaff, apiGetLeave,
   clearSession, ROLE_LABELS, ROLE_COLORS,
 } from "./schoolApi";
 import OverviewTab from "./admin/OverviewTab";
@@ -85,6 +85,7 @@ export default function AdminDashboard({ user }: { user: User }) {
   const [grades, setGrades] = useState<Grade[]>([]);
   const [payroll, setPayroll] = useState<Payroll[]>([]);
   const [staff, setStaff] = useState<StaffRecord[]>([]);
+  const [leave, setLeave] = useState<LeaveRequest[]>([]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -126,13 +127,14 @@ export default function AdminDashboard({ user }: { user: User }) {
 
   const loadAnalytics = useCallback(async () => {
     if (analyticsLoaded) return;
-    const [at, gr, py, st] = await Promise.allSettled([
-      apiGetAttendance(), apiGetGrades(), apiGetPayroll(), apiGetStaff(),
+    const [at, gr, py, st, lv] = await Promise.allSettled([
+      apiGetAttendance(), apiGetGrades(), apiGetPayroll(), apiGetStaff(), apiGetLeave(),
     ]);
     if (at.status === "fulfilled") setAttendance(at.value);
     if (gr.status === "fulfilled") setGrades(gr.value);
     if (py.status === "fulfilled") setPayroll(py.value);
     if (st.status === "fulfilled") setStaff(st.value);
+    if (lv.status === "fulfilled") setLeave(lv.value);
     setAnalyticsLoaded(true);
   }, [analyticsLoaded]);
 
@@ -247,7 +249,7 @@ export default function AdminDashboard({ user }: { user: User }) {
                 {tab === "library" && <LibraryTab users={users} />}
                 {tab === "announcements" && <AnnouncementsTab announcements={announcements} currentUser={user} onRefresh={refreshAnnouncements} />}
                 {tab === "events" && <EventsTab events={events} onRefresh={refreshEvents} />}
-                {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} attendance={attendance} grades={grades} payroll={payroll} staff={staff} />}
+                {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} attendance={attendance} grades={grades} payroll={payroll} staff={staff} leave={leave} />}
               </>
             )}
           </div>

@@ -5,15 +5,16 @@ import {
 } from "recharts";
 import {
   TrendingUp, Users, BookOpen, ClipboardList, DollarSign, RefreshCw,
-  Download, GraduationCap, Briefcase, Activity,
+  Download, GraduationCap, Briefcase, Activity, CalendarCheck,
 } from "lucide-react";
-import type { User, Course, Enrollment, Payment, ReportOverview, Attendance, Grade, Payroll, StaffRecord } from "../schoolApi";
+import type { User, Course, Enrollment, Payment, ReportOverview, Attendance, Grade, Payroll, StaffRecord, LeaveRequest } from "../schoolApi";
 import { ROLE_LABELS } from "../schoolApi";
 
 interface Props {
   report: ReportOverview | null;
   users: User[]; courses: Course[]; enrollments: Enrollment[]; payments: Payment[];
   attendance: Attendance[]; grades: Grade[]; payroll: Payroll[]; staff: StaffRecord[];
+  leave: LeaveRequest[];
 }
 
 const GREEN = "#1a6b2a";
@@ -21,7 +22,35 @@ const GOLD = "#d4a017";
 const DARK = "#0d3d1a";
 const PIE_COLORS = [GREEN, GOLD, "#3b82f6", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316"];
 
-type ReportSection = "overview" | "enrollment" | "finance" | "academic" | "hr";
+type ReportSection = "overview" | "enrollment" | "finance" | "academic" | "attendance" | "hr";
+
+/* ─── CSV export helper ───────────────────────────────────────── */
+function exportCsv(filename: string, headers: string[], rows: (string | number)[]) {
+  const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [headers.map(escape).join(","), ...rows.map(r => escape(r))].join("\n");
+  const blob = new Blob([lines], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportCsvRows(filename: string, headers: string[], rows: (string | number)[][]) {
+  const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [headers.map(escape).join(","), ...rows.map(r => r.map(escape).join(","))].join("\n");
+  const blob = new Blob([lines], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ─── CSV button ──────────────────────────────────────────────── */
+function CsvBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 shadow-sm transition-colors">
+      <Download className="w-3 h-3" />Export CSV
+    </button>
+  );
+}
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 function monthKey(iso: string) {
@@ -51,6 +80,7 @@ const SECTIONS: { key: ReportSection; label: string; icon: React.ElementType }[]
   { key: "enrollment", label: "Enrollment", icon: ClipboardList },
   { key: "finance", label: "Finance", icon: DollarSign },
   { key: "academic", label: "Academic", icon: GraduationCap },
+  { key: "attendance", label: "Attendance", icon: CalendarCheck },
   { key: "hr", label: "HR & Payroll", icon: Briefcase },
 ];
 
@@ -100,7 +130,7 @@ function Tip({ active, payload, label }: { active?: boolean; payload?: { name: s
 }
 
 /* ─── Main component ──────────────────────────────────────────── */
-export default function ReportsTab({ report, users, courses, enrollments, payments, attendance, grades, payroll, staff }: Props) {
+export default function ReportsTab({ report, users, courses, enrollments, payments, attendance, grades, payroll, staff, leave }: Props) {
   const [section, setSection] = useState<ReportSection>("overview");
 
   /* ── Enrollment trend (last 6 months) ── */
@@ -226,6 +256,56 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
   }, [attendance]);
 
   const totalPayroll = useMemo(() => payroll.reduce((s, p) => s + num(p.net), 0), [payroll]);
+
+  /* ── Daily attendance trend (last 30 days) ── */
+  const dailyAttendance = useMemo(() => {
+    const now = new Date();
+    const days: Record<string, { date: string; present: number; absent: number; late: number; excused: number }> = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const k = d.toISOString().slice(0, 10);
+      days[k] = { date: k.slice(5), present: 0, absent: 0, late: 0, excused: 0 };
+    }
+    attendance.forEach(a => {
+      const k = (a.sessionDate || "").slice(0, 10);
+      if (k in days) (days[k] as Record<string, number | string>)[a.status] = ((days[k] as Record<string, number | string>)[a.status] as number || 0) + 1;
+    });
+    return Object.values(days);
+  }, [attendance]);
+
+  /* ── Leave utilisation by type ── */
+  const leaveByType = useMemo(() => {
+    const counts: Record<string, { approved: number; pending: number; rejected: number }> = {};
+    leave.forEach(l => {
+      if (!counts[l.type]) counts[l.type] = { approved: 0, pending: 0, rejected: 0 };
+      const s = l.status as "approved" | "pending" | "rejected";
+      if (s in counts[l.type]) counts[l.type][s]++;
+    });
+    return Object.entries(counts).map(([type, c]) => ({ type, ...c }));
+  }, [leave]);
+
+  /* ── CSV exports ── */
+  const csvEnrollment = () => exportCsvRows(`enrollments-${new Date().toISOString().slice(0,10)}.csv`,
+    ["Student", "Course", "Status", "Fee", "Enrolled At"],
+    enrollments.map(e => [e.studentName || e.studentId, e.courseTitle || e.courseId, e.status, e.fee || "0", e.enrolledAt]));
+
+  const csvFinance = () => exportCsvRows(`finance-${new Date().toISOString().slice(0,10)}.csv`,
+    ["Student", "Course", "Amount", "Status", "Method", "Due Date", "Paid On"],
+    payments.map(p => [p.studentName || p.studentId, p.courseTitle || p.courseId, p.amount, p.status, p.method || "", p.dueDate || "", p.paidAt || ""]));
+
+  const csvAcademic = () => exportCsvRows(`grades-${new Date().toISOString().slice(0,10)}.csv`,
+    ["Student", "Course", "Assessment", "Score", "Max Score", "Grade", "Comment"],
+    grades.map(g => [g.studentName || g.studentId, g.courseTitle || g.courseId, g.assessment, g.score, g.maxScore, g.grade || "", g.comment || ""]));
+
+  const csvAttendance = () => exportCsvRows(`attendance-${new Date().toISOString().slice(0,10)}.csv`,
+    ["Student", "Course", "Date", "Status", "Notes"],
+    attendance.map(a => [a.studentName || a.studentId, a.courseTitle || a.courseId, a.sessionDate, a.status, a.notes || ""]));
+
+  const csvHr = () => exportCsvRows(`hr-${new Date().toISOString().slice(0,10)}.csv`,
+    ["Staff", "Period", "Gross", "Deductions", "Net", "Status"],
+    payroll.map(p => [p.userName || p.userId, p.period, p.gross, p.deductions, p.net, p.status]));
+
+  void exportCsv;
 
   /* ── Export PDF summary ── */
   const exportPdf = async () => {
@@ -440,6 +520,7 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
       {/* Enrollment section */}
       {section === "enrollment" && (
         <div className="space-y-5">
+          <div className="flex justify-end"><CsvBtn onClick={csvEnrollment} /></div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KPI label="Total Enrollments" value={report.totalEnrollments} icon={ClipboardList} color={GREEN} sub={`${report.activeEnrollments} active`} />
             <KPI label="Pending" value={report.pendingEnrollments} icon={ClipboardList} color="#f59e0b" />
@@ -514,6 +595,7 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
       {/* Finance section */}
       {section === "finance" && (
         <div className="space-y-5">
+          <div className="flex justify-end"><CsvBtn onClick={csvFinance} /></div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KPI label="Collected" value={`$${totalCollected.toFixed(0)}`} icon={DollarSign} color="#0d9488" sub={`${report.paidPayments} payments`} />
             <KPI label="Outstanding" value={`$${totalOutstanding.toFixed(0)}`} icon={DollarSign} color="#ef4444" sub={`${report.pendingPayments} pending`} />
@@ -595,6 +677,7 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
       {/* Academic section */}
       {section === "academic" && (
         <div className="space-y-5">
+          <div className="flex justify-end"><CsvBtn onClick={csvAcademic} /></div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KPI label="Attendance Rate" value={`${overallAttRate}%`} icon={Activity} color="#3b82f6" sub={`${attendance.length} records`} />
             <KPI label="Average Grade" value={`${avgGrade}%`} icon={GraduationCap} color={GREEN} sub={`${grades.length} assessments`} />
@@ -664,9 +747,71 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
         </div>
       )}
 
+      {/* Attendance section */}
+      {section === "attendance" && (
+        <div className="space-y-5">
+          <div className="flex justify-end"><CsvBtn onClick={csvAttendance} /></div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KPI label="Attendance Rate" value={`${overallAttRate}%`} icon={CalendarCheck} color="#3b82f6" sub={`${attendance.length} records`} />
+            <KPI label="Present" value={attendance.filter(a => a.status === "present").length} icon={Activity} color={GREEN} />
+            <KPI label="Absent" value={attendance.filter(a => a.status === "absent").length} icon={Activity} color="#ef4444" />
+            <KPI label="Late / Excused" value={attendance.filter(a => a.status === "late" || a.status === "excused").length} icon={Activity} color={GOLD} />
+          </div>
+          <div className="grid lg:grid-cols-2 gap-4">
+            <Card title="Attendance Rate by Course" icon={Activity} iconColor="#3b82f6">
+              {attendByCourse.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(180, attendByCourse.length * 32)}>
+                  <BarChart data={attendByCourse} layout="vertical" margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
+                    <XAxis type="number" tick={{ fontSize: 9 }} domain={[0, 100]} unit="%" />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fontWeight: 600 }} width={120} />
+                    <Tooltip content={<Tip />} contentStyle={TOOLTIP_STYLE} />
+                    <Bar dataKey="rate" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Attendance %" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <NoData />}
+            </Card>
+            <Card title="Daily Attendance Trends (Last 30 Days)" icon={TrendingUp} iconColor={GREEN}>
+              {dailyAttendance.some(d => d.present + d.absent + d.late + d.excused > 0) ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={dailyAttendance} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="date" tick={{ fontSize: 8 }} interval={4} />
+                    <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Legend wrapperStyle={{ fontSize: 9 }} />
+                    <Bar dataKey="present" stackId="a" fill={GREEN} name="Present" />
+                    <Bar dataKey="late" stackId="a" fill={GOLD} name="Late" />
+                    <Bar dataKey="excused" stackId="a" fill="#3b82f6" name="Excused" />
+                    <Bar dataKey="absent" stackId="a" fill="#ef4444" name="Absent" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <NoData />}
+            </Card>
+            <Card title="Attendance Status Breakdown" icon={CalendarCheck} iconColor="#3b82f6">
+              {attendance.length > 0 ? (() => {
+                const counts = attendance.reduce<Record<string, number>>((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {});
+                const data = Object.entries(counts).map(([name, value]) => ({ name, value }));
+                const colors: Record<string, string> = { present: GREEN, absent: "#ef4444", late: GOLD, excused: "#3b82f6" };
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={data} cx="50%" cy="50%" outerRadius={80} dataKey="value" nameKey="name"
+                        label={({ name, value }) => `${name}: ${value}`} labelLine={false} fontSize={9}>
+                        {data.map((d, i) => <Cell key={i} fill={colors[d.name] || PIE_COLORS[i]} />)}
+                      </Pie>
+                      <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                );
+              })() : <NoData />}
+            </Card>
+          </div>
+        </div>
+      )}
+
       {/* HR section */}
       {section === "hr" && (
         <div className="space-y-5">
+          <div className="flex justify-end"><CsvBtn onClick={csvHr} /></div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KPI label="Staff Records" value={staff.length} icon={Briefcase} color={DARK} />
             <KPI label="Total Payroll (Net)" value={`$${totalPayroll.toFixed(0)}`} icon={DollarSign} color={GREEN} sub={`${payroll.length} records`} />
@@ -738,6 +883,21 @@ export default function ReportsTab({ report, users, courses, enrollments, paymen
                   </ResponsiveContainer>
                 );
               })() : <NoData />}
+            </Card>
+            <Card title="Leave Utilisation by Type" icon={CalendarCheck} iconColor="#3b82f6">
+              {leaveByType.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={leaveByType} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="type" tick={{ fontSize: 9, fontWeight: 600 }} />
+                    <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Legend wrapperStyle={{ fontSize: 9 }} />
+                    <Bar dataKey="approved" stackId="a" fill={GREEN} name="Approved" />
+                    <Bar dataKey="pending" stackId="a" fill={GOLD} name="Pending" />
+                    <Bar dataKey="rejected" stackId="a" fill="#ef4444" name="Rejected" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <NoData />}
             </Card>
           </div>
         </div>
