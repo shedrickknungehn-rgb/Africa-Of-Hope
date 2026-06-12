@@ -1,43 +1,71 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Lock, User, Eye, EyeOff, AlertCircle, Zap, GraduationCap, ArrowLeft, ChevronRight } from "lucide-react";
-import { apiLogin, getSession } from "./schoolApi";
+import { BookOpen, Lock, User, Eye, EyeOff, AlertCircle, ArrowLeft, ShieldCheck, Mail, UserPlus } from "lucide-react";
+import { apiLogin, apiSetup, apiGetSetupStatus, getSession } from "./schoolApi";
 
-const DEMO_ACCOUNTS = [
-  { role: "Super Admin", username: "superadmin", password: "SuperAdmin2026", color: "bg-red-600", badge: "bg-red-100 text-red-700", desc: "Full system control" },
-  { role: "Director", username: "director", password: "Director2026", color: "bg-orange-500", badge: "bg-orange-100 text-orange-700", desc: "School director access" },
-  { role: "Registrar", username: "registrar", password: "Registrar2026", color: "bg-amber-500", badge: "bg-amber-100 text-amber-700", desc: "Enrollment & records" },
-  { role: "Finance Officer", username: "finance", password: "Finance2026", color: "bg-teal-600", badge: "bg-teal-100 text-teal-700", desc: "Finance management" },
-  { role: "Instructor", username: "instructor1", password: "Instructor2026", color: "bg-blue-600", badge: "bg-blue-100 text-blue-700", desc: "Manage courses & classes" },
-  { role: "Student", username: "student1", password: "Student2026", color: "bg-green-600", badge: "bg-green-100 text-green-700", desc: "View courses & join classes" },
-];
+type Mode = "loading" | "login" | "setup";
+
+const inputClass =
+  "w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm text-[#0f0f0f] focus:border-[#1a6b2a] focus:outline-none transition-colors";
+const labelClass =
+  "text-[#0f0f0f] font-bold text-xs uppercase tracking-wide block mb-1.5";
 
 export default function SchoolLogin() {
   const [, navigate] = useLocation();
+  const [mode, setMode] = useState<Mode>("loading");
+
+  // Login fields
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
+
+  // Setup fields
+  const [suName, setSuName] = useState("");
+  const [suUsername, setSuUsername] = useState("");
+  const [suEmail, setSuEmail] = useState("");
+  const [suPassword, setSuPassword] = useState("");
+  const [suConfirm, setSuConfirm] = useState("");
+  const [showSuPass, setShowSuPass] = useState(false);
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [autoLoading, setAutoLoading] = useState<string | null>(null);
 
-  useEffect(() => { if (getSession()) navigate("/school/dashboard"); }, [navigate]);
+  useEffect(() => {
+    if (getSession()) { navigate("/school/dashboard"); return; }
+    let active = true;
+    (async () => {
+      try {
+        const { needsSetup } = await apiGetSetupStatus();
+        if (active) setMode(needsSetup ? "setup" : "login");
+      } catch {
+        // If the server can't be reached we default to the login form;
+        // the submit handler will surface a clear connectivity message.
+        if (active) setMode("login");
+      }
+    })();
+    return () => { active = false; };
+  }, [navigate]);
 
-  const doLogin = async (u: string, p: string) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(""); setLoading(true);
-    try { await apiLogin(u.trim(), p); navigate("/school/dashboard"); }
+    try { await apiLogin(username.trim(), password); navigate("/school/dashboard"); }
     catch (err: unknown) { setError(err instanceof Error ? err.message : "Login failed. Please try again."); }
-    finally { setLoading(false); setAutoLoading(null); }
+    finally { setLoading(false); }
   };
 
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); doLogin(username, password); };
-
-  const handleOneClick = async (acc: typeof DEMO_ACCOUNTS[0]) => {
-    setUsername(acc.username); setPassword(acc.password);
-    setAutoLoading(acc.role); setError(""); setLoading(true);
-    try { await apiLogin(acc.username, acc.password); navigate("/school/dashboard"); }
-    catch (err: unknown) { setError(err instanceof Error ? err.message : "Login failed. Please try again."); }
-    finally { setLoading(false); setAutoLoading(null); }
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (suPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (suPassword !== suConfirm) { setError("Passwords do not match."); return; }
+    setLoading(true);
+    try {
+      await apiSetup({ name: suName.trim(), username: suUsername.trim(), email: suEmail.trim(), password: suPassword });
+      navigate("/school/dashboard");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Setup failed. Please try again.");
+    } finally { setLoading(false); }
   };
 
   return (
@@ -58,79 +86,132 @@ export default function SchoolLogin() {
           </div>
 
           <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
-            <div className="p-6 sm:p-8">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center">
-                  <BookOpen className="w-5 h-5 text-[#1a6b2a]" />
-                </div>
-                <div>
-                  <h2 className="font-black text-[#0f0f0f] text-lg">Staff & Student Portal</h2>
-                  <p className="text-gray-500 text-xs">Sign in to your dashboard</p>
-                </div>
+            {mode === "loading" && (
+              <div className="p-12 flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 border-2 border-[#1a6b2a] border-t-transparent rounded-full animate-spin" />
+                <p className="text-gray-500 text-sm">Connecting to the portal…</p>
               </div>
+            )}
 
-              {error && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-red-600 text-sm">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="text-[#0f0f0f] font-bold text-xs uppercase tracking-wide block mb-1.5">Username</label>
-                  <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}
-                      placeholder="Enter your username"
-                      className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm text-[#0f0f0f] focus:border-[#1a6b2a] focus:outline-none transition-colors" />
+            {mode === "login" && (
+              <div className="p-6 sm:p-8">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 rounded-xl bg-[#1a6b2a]/10 flex items-center justify-center">
+                    <BookOpen className="w-5 h-5 text-[#1a6b2a]" />
+                  </div>
+                  <div>
+                    <h2 className="font-black text-[#0f0f0f] text-lg">Staff & Student Portal</h2>
+                    <p className="text-gray-500 text-xs">Sign in to your dashboard</p>
                   </div>
                 </div>
-                <div>
-                  <label className="text-[#0f0f0f] font-bold text-xs uppercase tracking-wide block mb-1.5">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type={showPass ? "text" : "password"} required autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl text-sm text-[#0f0f0f] focus:border-[#1a6b2a] focus:outline-none transition-colors" />
-                    <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-                <button type="submit" disabled={loading}
-                  className="w-full bg-[#1a6b2a] hover:bg-[#155a22] disabled:bg-gray-200 text-white font-black py-3.5 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] text-sm">
-                  {loading && !autoLoading ? "Signing in…" : "Sign In"}
-                </button>
-              </form>
-            </div>
 
-            <div className="border-t border-gray-100 bg-[#f9faf8] px-6 sm:px-8 py-5">
-              <div className="flex items-center gap-2 mb-4">
-                <GraduationCap className="w-4 h-4 text-[#1a6b2a]" />
-                <p className="text-xs font-black text-[#0f0f0f] uppercase tracking-wide">Demo Accounts — One-Click Sign In</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {DEMO_ACCOUNTS.map((acc) => (
-                  <button key={acc.role} onClick={() => handleOneClick(acc)} disabled={loading}
-                    className="group flex items-center gap-3 p-3 bg-white rounded-xl border-2 border-gray-100 hover:border-[#1a6b2a] hover:shadow-md transition-all disabled:opacity-60 text-left active:scale-[0.98] touch-manipulation">
-                    <div className={`w-9 h-9 ${acc.color} rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm`}>
-                      {autoLoading === acc.role ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : <Zap className="w-4 h-4 text-white" />}
+                {error && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+                  </div>
+                )}
+
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className={labelClass}>Username</label>
+                    <div className="relative">
+                      <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type="text" required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}
+                        placeholder="Enter your username" className={inputClass} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="font-black text-sm text-[#0f0f0f]">{acc.role}</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${acc.badge}`}>{acc.desc}</span>
-                      </div>
-                      <p className="text-[11px] text-gray-400 font-mono truncate">{acc.username}</p>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type={showPass ? "text" : "password"} required autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}
+                        placeholder="Enter your password" className={`${inputClass} pr-10`} />
+                      <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#1a6b2a] transition-colors flex-shrink-0" />
+                  </div>
+                  <button type="submit" disabled={loading}
+                    className="w-full bg-[#1a6b2a] hover:bg-[#155a22] disabled:bg-gray-200 text-white font-black py-3.5 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] text-sm">
+                    {loading ? "Signing in…" : "Sign In"}
                   </button>
-                ))}
+                </form>
               </div>
-              <p className="text-[10px] text-gray-400 text-center mt-3">Click any card to sign in instantly as that role</p>
-            </div>
+            )}
+
+            {mode === "setup" && (
+              <div className="p-6 sm:p-8">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-[#d4a017]/15 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5 text-[#d4a017]" />
+                  </div>
+                  <div>
+                    <h2 className="font-black text-[#0f0f0f] text-lg">Create Super Administrator</h2>
+                    <p className="text-gray-500 text-xs">First-time setup — this is the only account with full control</p>
+                  </div>
+                </div>
+
+                <div className="bg-[#1a6b2a]/5 border border-[#1a6b2a]/15 rounded-xl p-3 mb-4 text-[#0d3d1a] text-xs leading-relaxed">
+                  Welcome! No accounts exist yet. Create the Super Administrator below — you'll then add directors, staff, instructors and students from inside the dashboard.
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+                  </div>
+                )}
+
+                <form onSubmit={handleSetup} className="space-y-4">
+                  <div>
+                    <label className={labelClass}>Full Name</label>
+                    <div className="relative">
+                      <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type="text" required value={suName} onChange={e => setSuName(e.target.value)}
+                        placeholder="e.g. Jane Doe" className={inputClass} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type="email" value={suEmail} onChange={e => setSuEmail(e.target.value)}
+                        placeholder="admin@africaofhope.org" className={inputClass} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Username</label>
+                    <div className="relative">
+                      <UserPlus className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type="text" required autoComplete="username" value={suUsername} onChange={e => setSuUsername(e.target.value)}
+                        placeholder="Choose a username" className={inputClass} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type={showSuPass ? "text" : "password"} required autoComplete="new-password" value={suPassword} onChange={e => setSuPassword(e.target.value)}
+                        placeholder="At least 8 characters" className={`${inputClass} pr-10`} />
+                      <button type="button" onClick={() => setShowSuPass(!showSuPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        {showSuPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Confirm Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input type={showSuPass ? "text" : "password"} required autoComplete="new-password" value={suConfirm} onChange={e => setSuConfirm(e.target.value)}
+                        placeholder="Re-enter your password" className={inputClass} />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={loading}
+                    className="w-full bg-[#1a6b2a] hover:bg-[#155a22] disabled:bg-gray-200 text-white font-black py-3.5 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] text-sm">
+                    {loading ? "Creating account…" : "Create Super Administrator"}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
 
           <p className="text-center text-white/30 text-xs mt-5">

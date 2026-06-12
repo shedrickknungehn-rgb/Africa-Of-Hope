@@ -96,6 +96,33 @@ router.post("/auth/login", async (req, res) => {
   res.json({ token, user: fmtUser(u) });
 });
 
+/* First-run setup: when no super_admin exists, the login screen shows a
+   "Create Super Administrator" form instead of demo accounts. */
+router.get("/auth/setup-status", async (_req, res) => {
+  const db = getSupabase();
+  const { count, error } = await db.from("school_users").select("id", { count: "exact", head: true }).eq("role", "super_admin");
+  if (error) { res.status(503).json({ error: "Database not ready. Please run the school migrations in Supabase." }); return; }
+  res.json({ needsSetup: (count ?? 0) === 0 });
+});
+
+router.post("/auth/setup", async (req, res) => {
+  const { name, username, email, password } = req.body as Record<string, string>;
+  if (!name || !username || !password) { res.status(400).json({ error: "Name, username, and password are required" }); return; }
+  if (password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters" }); return; }
+  const db = getSupabase();
+  const { count, error: cErr } = await db.from("school_users").select("id", { count: "exact", head: true }).eq("role", "super_admin");
+  if (cErr) { res.status(503).json({ error: "Database not ready. Please run the school migrations in Supabase." }); return; }
+  if ((count ?? 0) > 0) { res.status(403).json({ error: "Setup has already been completed. Please sign in." }); return; }
+  const { data, error } = await db.from("school_users").insert({ username: username.trim(), password, name: name.trim(), email: (email || "").trim(), phone: "", role: "super_admin" }).select().single();
+  if (error) {
+    if (error.code === "23505" || error.message?.includes("unique")) { res.status(409).json({ error: "That username is already taken" }); return; }
+    throw error;
+  }
+  const u = data as DbUser;
+  const token = signToken({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role });
+  res.status(201).json({ token, user: fmtUser(u) });
+});
+
 router.get("/me", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
   const { data, error } = await db.from("school_users").select("*").eq("id", req.user!.id).single();

@@ -132,21 +132,56 @@ function authHeaders(): HeadersInit {
   return { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) };
 }
 
+const UNREACHABLE = "Unable to reach the school server. Please make sure the API server is deployed and VITE_API_URL is configured for this site.";
+
+async function parseJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  if (!text) return {};
+  try { return JSON.parse(text) as Record<string, unknown>; }
+  catch { return { error: "The server returned an unexpected (non-JSON) response." }; }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, { headers: authHeaders(), ...options });
-  const data = await res.json().catch(() => ({}));
+  let res: Response;
+  try { res = await fetch(`${API}${path}`, { headers: authHeaders(), ...options }); }
+  catch { throw new Error(UNREACHABLE); }
+  const data = await parseJson(res);
   if (!res.ok) throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
   return data as T;
 }
 
 /* ─── Auth ─────────────────────────────────────────────────── */
 export async function apiLogin(username: string, password: string): Promise<{ token: string; user: User }> {
-  const res = await fetch(`${API}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Login failed");
-  localStorage.setItem("aoh_school_token", data.token);
-  localStorage.setItem("aoh_school_user", JSON.stringify(data.user));
-  return data;
+  let res: Response;
+  try { res = await fetch(`${API}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) }); }
+  catch { throw new Error(UNREACHABLE); }
+  const data = await parseJson(res);
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Login failed");
+  if (!data["token"]) throw new Error("Login failed — the server returned an invalid response.");
+  localStorage.setItem("aoh_school_token", data["token"] as string);
+  localStorage.setItem("aoh_school_user", JSON.stringify(data["user"]));
+  return data as unknown as { token: string; user: User };
+}
+
+export async function apiGetSetupStatus(): Promise<{ needsSetup: boolean }> {
+  let res: Response;
+  try { res = await fetch(`${API}/auth/setup-status`); }
+  catch { throw new Error(UNREACHABLE); }
+  const data = await parseJson(res);
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Could not check setup status");
+  return { needsSetup: Boolean((data as { needsSetup?: boolean }).needsSetup) };
+}
+
+export async function apiSetup(payload: { name: string; username: string; email: string; password: string }): Promise<{ token: string; user: User }> {
+  let res: Response;
+  try { res = await fetch(`${API}/auth/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+  catch { throw new Error(UNREACHABLE); }
+  const data = await parseJson(res);
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Setup failed");
+  if (!data["token"]) throw new Error("Setup failed — the server returned an invalid response.");
+  localStorage.setItem("aoh_school_token", data["token"] as string);
+  localStorage.setItem("aoh_school_user", JSON.stringify(data["user"]));
+  return data as unknown as { token: string; user: User };
 }
 
 export function getSession(): { user: User } | null {

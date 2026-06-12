@@ -59,10 +59,10 @@ Non-management: instructor, assistant → InstructorDashboard; student, alumni �
 - All endpoints: `Authorization: Bearer <token>`
 - Management roles get full user list + all CRUD; others get limited access
 
-## Demo Accounts (seeded by seed.ts)
-- Roles seeded: admin, super_admin, director, registrar, academic_coordinator, finance_officer, hr_officer, instructor, assistant, student (x2), alumni
-- Credentials are visible to admins via the Users tab (show/hide password feature); not stored in memory.
-- Run `artifacts/api-server/src/seed.ts` or `supabase/seed.sql` to populate; see `supabase/README.md` for steps.
+## Auth model: first-run Super Admin setup (NO demo accounts)
+- Demo seeding REMOVED — `seed.ts` is a no-op. Demo rows are cleared by `supabase/migrations/009_remove_demo_data.sql` (deletes all school_* + parent_student_links; leaves contact_submissions/donations untouched).
+- `SchoolLogin.tsx` calls `GET /api/school/auth/setup-status` on mount → `{needsSetup}` (true when no super_admin row). True → "Create Super Administrator" form → `POST /api/school/auth/setup` (creates first super_admin only; 403 if one already exists). False → normal login.
+- To re-trigger setup on any DB: ensure no super_admin row exists (run migration 009).
 
 **Why plaintext passwords in DB:** AdminDashboard Users tab has show/hide password for admins to share credentials with enrolled students. Internal portal only.
 
@@ -106,6 +106,11 @@ Run all in: Supabase Dashboard → SQL Editor → paste entire file → Run
 
 ### Frontend
 - `VITE_API_URL` — backend URL (no trailing slash)
+
+## Production login pitfall (Vercel) — root cause of "Unexpected end of JSON input"
+- Frontend (Vercel) and the Express API are SEPARATE hosts. If `VITE_API_URL` is unset/empty on Vercel, login POSTs to a relative `/api/...` on the Vercel domain (no backend) → empty body → `res.json()` throws "Unexpected end of JSON input".
+- **Why:** the Express backend was never deployed to a host reachable from Vercel.
+- **How to fix:** (a) deploy `artifacts/api-server` somewhere reachable (e.g. a Replit deployment → stable `.replit.app` URL), (b) set `VITE_API_URL` on Vercel to that URL and redeploy, (c) add the Vercel origin to `ALLOWED_ORIGINS` (CORS). `schoolApi.ts` now degrades to a clear "Unable to reach the school server" message instead of the raw JSON error.
 
 ## Branding
 - Public site: primary `#F03800` / `#2492FF`
