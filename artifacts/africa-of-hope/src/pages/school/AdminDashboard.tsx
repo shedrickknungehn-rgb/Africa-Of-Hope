@@ -21,8 +21,9 @@ import ReportsTab from "./admin/ReportsTab";
 import HRTab from "./admin/HRTab";
 import MessagingTab from "./admin/MessagingTab";
 import TimetableTab from "./admin/TimetableTab";
+import AssessmentsTab from "./admin/AssessmentsTab";
 
-type Tab = "overview" | "users" | "courses" | "enrollments" | "finance" | "hr" | "announcements" | "events" | "reports" | "messaging" | "timetable";
+type Tab = "overview" | "users" | "courses" | "enrollments" | "finance" | "hr" | "announcements" | "events" | "reports" | "messaging" | "timetable" | "assessments";
 
 interface NavItem { key: Tab; label: string; icon: React.ElementType; }
 
@@ -35,6 +36,7 @@ const NAV_GROUPS = [
       { key: "courses" as Tab, label: "Courses", icon: BookOpen },
       { key: "enrollments" as Tab, label: "Enrollments", icon: ClipboardList },
       { key: "timetable" as Tab, label: "Timetable & Exams", icon: Calendar },
+      { key: "assessments" as Tab, label: "Assessments", icon: ClipboardList },
     ],
   },
   { label: "Finance", items: [{ key: "finance" as Tab, label: "Finance", icon: DollarSign }] },
@@ -55,6 +57,7 @@ const TAB_TITLES: Record<Tab, string> = {
   enrollments: "Enrollment Management", finance: "Finance Management",
   hr: "Human Resources & Payroll", messaging: "Messaging",
   timetable: "Timetable & Exam Scheduler",
+  assessments: "Assessments & Quizzes",
   announcements: "Announcements", events: "Events", reports: "Reports & Analytics",
 };
 
@@ -214,6 +217,7 @@ export default function AdminDashboard({ user }: { user: User }) {
                 {tab === "hr" && <HRTab users={users} />}
                 {tab === "messaging" && <MessagingTab currentUser={user} />}
                 {tab === "timetable" && <TimetableTab courses={courses} users={users} />}
+                {tab === "assessments" && <AssessmentsTab courses={courses} users={users} currentUser={user} />}
                 {tab === "announcements" && <AnnouncementsTab announcements={announcements} currentUser={user} onRefresh={refreshAnnouncements} />}
                 {tab === "events" && <EventsTab events={events} onRefresh={refreshEvents} />}
                 {tab === "reports" && <ReportsTab report={report} users={users} courses={courses} enrollments={enrollments} payments={payments} />}

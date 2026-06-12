@@ -1,14 +1,16 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar, Mail, Clock } from "lucide-react";
+import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar, Mail, Clock, ClipboardList, CheckCircle, AlertCircle } from "lucide-react";
 import {
   User, Course, Enrollment, Grade, Attendance, Payment, Announcement, SchoolEvent, TimetableSlot, Exam,
+  Quiz, QuizSubmission,
   apiGetCourses, apiGetEnrollments, apiGetGrades, apiGetAttendance, apiGetPayments,
   apiGetAnnouncements, apiGetEvents, apiGetTimetable, apiGetExams, clearSession,
+  apiGetQuizzes, apiSubmitQuiz, apiGetMyQuizSubmission,
 } from "./schoolApi";
 import MessagingTab from "./admin/MessagingTab";
 
-type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "schedule" | "inbox" | "announcements" | "events";
+type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "schedule" | "assessments" | "inbox" | "announcements" | "events";
 
 export default function StudentDashboard({ user }: { user: User }) {
   const [, navigate] = useLocation();
@@ -54,6 +56,7 @@ export default function StudentDashboard({ user }: { user: User }) {
     { key: "transcript" as Tab, label: "Grades & Transcript", icon: GraduationCap },
     { key: "attendance" as Tab, label: "Attendance", icon: ClipboardCheck },
     { key: "finance" as Tab, label: "Finance", icon: DollarSign },
+    { key: "assessments" as Tab, label: "Assessments", icon: ClipboardList },
     { key: "schedule" as Tab, label: "Schedule", icon: Calendar },
     { key: "inbox" as Tab, label: "Inbox", icon: Mail },
     { key: "announcements" as Tab, label: "Announcements", icon: Bell },
@@ -116,6 +119,7 @@ export default function StudentDashboard({ user }: { user: User }) {
           {tab === "transcript" && <TranscriptView grades={grades} courses={courses} />}
           {tab === "attendance" && <AttendanceView attendance={attendance} />}
           {tab === "finance" && <FinanceView payments={payments} />}
+          {tab === "assessments" && <StudentAssessmentsView user={user} myCourses={myCourses} />}
           {tab === "schedule" && <StudentScheduleView myCourses={myCourses} timetable={timetable} exams={exams} />}
           {tab === "inbox" && <MessagingTab currentUser={user} />}
           {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
@@ -467,6 +471,242 @@ function EventsView({ events }: { events: SchoolEvent[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ─── Student Assessments ────────────────────────────────────── */
+function StudentAssessmentsView({ user, myCourses }: { user: User; myCourses: Course[] }) {
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [submittedFor, setSubmittedFor] = useState<string | null>(null);
+  const [result, setResult] = useState<{ score: number; maxScore: number } | null>(null);
+  const [pastSubmissions, setPastSubmissions] = useState<Record<string, { score: number; maxScore: number } | null>>({});
+
+  useEffect(() => {
+    apiGetQuizzes().then((all) => {
+      setQuizzes(all);
+      setLoading(false);
+      all.forEach(async (q) => {
+        try {
+          const sub = await apiGetMyQuizSubmission(q.id);
+          if (sub) setPastSubmissions((p) => ({ ...p, [q.id]: { score: sub.score, maxScore: sub.maxScore } }));
+        } catch { }
+      });
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const myCourseIds = useMemo(() => new Set(myCourses.map((c) => c.id)), [myCourses]);
+  const available = quizzes.filter((q) => myCourseIds.has(q.courseId));
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-10 h-10 border-4 border-[#1a6b2a] border-t-transparent rounded-full animate-spin mx-auto" />
+    </div>
+  );
+
+  if (activeQuiz) return (
+    <QuizTaker
+      quiz={activeQuiz} userId={user.id}
+      onDone={(score, maxScore) => {
+        setResult({ score, maxScore });
+        setPastSubmissions((p) => ({ ...p, [activeQuiz.id]: { score, maxScore } }));
+        setSubmittedFor(activeQuiz.id);
+        setActiveQuiz(null);
+      }}
+      onCancel={() => setActiveQuiz(null)}
+    />
+  );
+
+  if (submittedFor && result) {
+    const pct = result.maxScore > 0 ? Math.round((result.score / result.maxScore) * 100) : 0;
+    return (
+      <div className="bg-white rounded-2xl p-10 shadow-sm text-center space-y-4">
+        <CheckCircle className={`w-16 h-16 mx-auto ${pct >= 70 ? "text-green-500" : pct >= 50 ? "text-amber-500" : "text-red-500"}`} />
+        <h2 className="text-2xl font-black text-[#0f0f0f]">Quiz Submitted!</h2>
+        {result.maxScore > 0 ? (
+          <>
+            <p className="text-4xl font-black text-[#1a6b2a]">{pct}%</p>
+            <p className="text-gray-500">{result.score} / {result.maxScore} correct</p>
+          </>
+        ) : (
+          <p className="text-gray-500">Your answers have been saved for instructor review.</p>
+        )}
+        <button onClick={() => { setSubmittedFor(null); setResult(null); }}
+          className="bg-[#0d3d1a] hover:bg-[#155a22] text-white font-black px-6 py-3 rounded-xl transition-colors touch-manipulation">
+          Back to Assessments
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {available.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 shadow-sm text-center text-gray-400">
+          <ClipboardList className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+          <p className="font-bold">No assessments available yet.</p>
+          <p className="text-sm mt-1">Published quizzes for your courses will appear here.</p>
+        </div>
+      ) : available.map((quiz) => {
+        const sub = pastSubmissions[quiz.id];
+        const isSubmitted = !!sub;
+        const pct = sub && sub.maxScore > 0 ? Math.round((sub.score / sub.maxScore) * 100) : null;
+        const now = new Date();
+        const due = quiz.dueDate ? new Date(quiz.dueDate) : null;
+        const overdue = due && due < now;
+
+        return (
+          <div key={quiz.id} className="bg-white rounded-2xl p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-black text-[#0f0f0f]">{quiz.title}</h3>
+                <p className="text-sm text-gray-500">{quiz.courseTitle}</p>
+                <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-400">
+                  <span>📝 {quiz.questions.length} question{quiz.questions.length !== 1 ? "s" : ""}</span>
+                  {quiz.timeLimitMins > 0 && <span>⏱ {quiz.timeLimitMins} min</span>}
+                  {due && (
+                    <span className={overdue ? "text-red-500 font-bold" : ""}>
+                      📅 Due {due.toLocaleDateString()}{overdue ? " (overdue)" : ""}
+                    </span>
+                  )}
+                </div>
+                {quiz.instructions && <p className="text-xs text-gray-400 mt-2 italic">{quiz.instructions}</p>}
+              </div>
+              <div className="flex-shrink-0">
+                {isSubmitted ? (
+                  <div className="text-center">
+                    <div className={`text-xl font-black ${pct !== null && pct >= 70 ? "text-green-600" : pct !== null && pct >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                      {pct !== null ? `${pct}%` : "✓"}
+                    </div>
+                    <p className="text-xs text-gray-400 font-bold">Submitted</p>
+                  </div>
+                ) : (
+                  <button onClick={() => setActiveQuiz(quiz)}
+                    className="flex items-center gap-2 bg-[#1a6b2a] hover:bg-[#155a22] text-white font-black px-4 py-2.5 rounded-xl text-sm transition-colors touch-manipulation">
+                    Start Quiz
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Quiz Taker ──────────────────────────────────────────────── */
+function QuizTaker({ quiz, userId, onDone, onCancel }: {
+  quiz: Quiz; userId: string;
+  onDone: (score: number, maxScore: number) => void;
+  onCancel: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+  const [timeLeft, setTimeLeft] = useState(quiz.timeLimitMins > 0 ? quiz.timeLimitMins * 60 : null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (timeLeft === null) return;
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t === null || t <= 1) { clearInterval(timerRef.current!); submit(true); return 0; }
+        return t - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  const submit = async (auto = false) => {
+    if (submitting) return;
+    setSubmitting(true); setErr("");
+    try {
+      const res = await apiSubmitQuiz(quiz.id, answers);
+      onDone(res.score, res.maxScore);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Submit failed"); setSubmitting(false); }
+  };
+
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-[#0d3d1a] text-white rounded-2xl p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-black text-lg">{quiz.title}</h2>
+          <p className="text-white/70 text-sm">{quiz.courseTitle} · {quiz.questions.length} question{quiz.questions.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {timeLeft !== null && (
+            <div className={`flex items-center gap-1.5 font-black text-lg px-3 py-1.5 rounded-xl ${timeLeft <= 60 ? "bg-red-500 animate-pulse" : "bg-white/10"}`}>
+              <Clock className="w-4 h-4" />{formatTime(timeLeft)}
+            </div>
+          )}
+          <button onClick={onCancel} className="text-white/60 hover:text-white p-1 touch-manipulation"><X className="w-5 h-5" /></button>
+        </div>
+      </div>
+
+      {quiz.instructions && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-amber-700 text-sm">{quiz.instructions}</div>
+      )}
+
+      <div className="space-y-4">
+        {quiz.questions.map((q, i) => (
+          <div key={q.id} className="bg-white rounded-2xl p-5 shadow-sm">
+            <p className="font-black text-[#0f0f0f] mb-3">Q{i + 1}. {q.text}</p>
+
+            {q.type === "mcq" && q.options && (
+              <div className="space-y-2">
+                {q.options.map((opt, oi) => (
+                  <label key={oi} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors touch-manipulation ${answers[q.id] === opt ? "bg-[#1a6b2a]/10 border border-[#1a6b2a]" : "bg-[#f7f5f0] hover:bg-gray-100"}`}>
+                    <input type="radio" name={`q-${q.id}`} value={opt} checked={answers[q.id] === opt}
+                      onChange={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
+                      className="accent-[#1a6b2a] flex-shrink-0" />
+                    <span className="text-sm font-medium">{opt}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {q.type === "true_false" && (
+              <div className="flex gap-3">
+                {["True", "False"].map((opt) => (
+                  <label key={opt} className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl cursor-pointer transition-colors touch-manipulation border ${answers[q.id] === opt ? "bg-[#1a6b2a]/10 border-[#1a6b2a]" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <input type="radio" name={`tf-${q.id}`} value={opt} checked={answers[q.id] === opt}
+                      onChange={() => setAnswers((a) => ({ ...a, [q.id]: opt }))}
+                      className="accent-[#1a6b2a]" />
+                    <span className="font-bold">{opt}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {q.type === "short_answer" && (
+              <textarea
+                value={answers[q.id] || ""} onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                rows={3} placeholder="Write your answer here…"
+                className="w-full bg-[#f7f5f0] border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {err && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-red-700 text-sm font-bold">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />{err}
+        </div>
+      )}
+
+      <div className="flex gap-3 pb-6">
+        <button onClick={onCancel} className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-black px-5 py-3 rounded-xl text-sm transition-colors touch-manipulation">Cancel</button>
+        <button onClick={() => submit()} disabled={submitting}
+          className="flex-1 bg-[#1a6b2a] hover:bg-[#155a22] disabled:opacity-50 text-white font-black py-3 rounded-xl text-sm transition-colors touch-manipulation">
+          {submitting ? "Submitting…" : "Submit Quiz"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -849,5 +849,142 @@ router.delete("/exams/:id", requireAuth, requireMgmt, async (req, res) => {
   res.status(204).send();
 });
 
+/* ─── Quizzes ────────────────────────────────────────────────── */
+interface DbQuestion { id: string; type: string; text: string; options?: string[]; correct?: string; }
+interface DbQuiz { id: string; course_id: string; title: string; instructions: string; due_date: string | null; time_limit_mins: number; status: string; questions: DbQuestion[]; created_by: string; created_at: string; }
+interface DbQuizSubmission { id: string; quiz_id: string; student_id: string; answers: Record<string, string>; score: number; max_score: number; submitted_at: string; created_at: string; }
+
+const fmtQuiz = (q: DbQuiz, cm: Map<string, { title: string; instructorId: string }>) => ({
+  id: q.id, courseId: q.course_id,
+  courseTitle: cm.get(q.course_id)?.title || "",
+  title: q.title, instructions: q.instructions,
+  dueDate: q.due_date, timeLimitMins: q.time_limit_mins,
+  status: q.status, questions: q.questions,
+  createdBy: q.created_by, createdAt: q.created_at,
+});
+
+router.get("/quizzes", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const role = req.user!.role;
+  const uid = String(req.user!.id);
+  let q = db.from("school_quizzes").select("*");
+  if (!MGMT.has(role)) {
+    if (role === "instructor" || role === "assistant") {
+      const { data: courses } = await db.from("school_courses").select("id").eq("instructor_id", uid);
+      const ids = (courses ?? []).map((c: { id: string }) => c.id);
+      if (ids.length === 0) { res.json([]); return; }
+      q = q.in("course_id", ids);
+    } else {
+      const { data: enrollments } = await db.from("school_enrollments").select("course_id").eq("student_id", uid).neq("status", "withdrawn");
+      const ids = (enrollments ?? []).map((e: { course_id: string }) => e.course_id);
+      if (ids.length === 0) { res.json([]); return; }
+      q = q.in("course_id", ids).eq("status", "published");
+    }
+  }
+  const { data, error } = await q.order("created_at", { ascending: false });
+  if (error) throw error;
+  const cm = await buildCourseMap();
+  res.json(((data ?? []) as DbQuiz[]).map((quiz) => fmtQuiz(quiz, cm)));
+});
+
+router.post("/quizzes", requireAuth, requireStaff, async (req: AuthRequest, res) => {
+  const { courseId, title, instructions, dueDate, timeLimitMins, status, questions } = req.body as Record<string, unknown>;
+  if (!courseId || !title) { res.status(400).json({ error: "courseId and title required" }); return; }
+  if (!await assertCourseAccess(req, res, String(courseId))) return;
+  const db = getSupabase();
+  const { data, error } = await db.from("school_quizzes").insert({
+    id: genId(), course_id: String(courseId), title: String(title),
+    instructions: String(instructions || ""),
+    due_date: dueDate || null,
+    time_limit_mins: Number(timeLimitMins) || 0,
+    status: String(status || "draft"),
+    questions: questions || [],
+    created_by: String(req.user!.id),
+  }).select().single();
+  if (error) throw error;
+  const cm = await buildCourseMap();
+  res.status(201).json(fmtQuiz(data as DbQuiz, cm));
+});
+
+router.patch("/quizzes/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
+  const id = String(req.params["id"]);
+  const { title, instructions, dueDate, timeLimitMins, status, questions } = req.body as Record<string, unknown>;
+  const upd: Record<string, unknown> = {};
+  if (title !== undefined) upd["title"] = title;
+  if (instructions !== undefined) upd["instructions"] = instructions;
+  if (dueDate !== undefined) upd["due_date"] = dueDate || null;
+  if (timeLimitMins !== undefined) upd["time_limit_mins"] = Number(timeLimitMins);
+  if (status !== undefined) upd["status"] = status;
+  if (questions !== undefined) upd["questions"] = questions;
+  const db = getSupabase();
+  const { data, error } = await db.from("school_quizzes").update(upd).eq("id", id).select().single();
+  if (error) throw error;
+  const cm = await buildCourseMap();
+  res.json(fmtQuiz(data as DbQuiz, cm));
+});
+
+router.delete("/quizzes/:id", requireAuth, requireStaff, async (req, res) => {
+  const db = getSupabase();
+  const { error } = await db.from("school_quizzes").delete().eq("id", String(req.params["id"]));
+  if (error) throw error;
+  res.status(204).send();
+});
+
+router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) => {
+  const quizId = String(req.params["id"]);
+  const studentId = String(req.user!.id);
+  const answers = (req.body.answers || {}) as Record<string, string>;
+  const db = getSupabase();
+  const { data: quizData, error: qErr } = await db.from("school_quizzes").select("*").eq("id", quizId).maybeSingle();
+  if (qErr) throw qErr;
+  if (!quizData) { res.status(404).json({ error: "Quiz not found" }); return; }
+  const quiz = quizData as DbQuiz;
+  let score = 0, maxScore = 0;
+  for (const q of quiz.questions) {
+    if (q.type === "mcq" || q.type === "true_false") {
+      maxScore++;
+      if (q.correct && answers[q.id] === q.correct) score++;
+    }
+  }
+  const { data: sub, error: sErr } = await db.from("school_quiz_submissions").insert({
+    id: genId(), quiz_id: quizId, student_id: studentId,
+    answers, score, max_score: maxScore,
+    submitted_at: new Date().toISOString(),
+  }).select().single();
+  if (sErr) throw sErr;
+  if (maxScore > 0) {
+    try {
+      await db.from("school_grades").insert({
+        id: genId(), student_id: studentId, course_id: quiz.course_id,
+        assessment: quiz.title, score: String(score), max_score: String(maxScore),
+        weight: "", grade: "", comment: "Auto-graded quiz", recorded_by: "system",
+      });
+    } catch { }
+  }
+  res.status(201).json({ ...(sub as DbQuizSubmission), score, maxScore });
+});
+
+router.get("/quizzes/:id/submissions", requireAuth, requireStaff, async (req, res) => {
+  const db = getSupabase();
+  const { data, error } = await db.from("school_quiz_submissions").select("*").eq("quiz_id", String(req.params["id"])).order("submitted_at", { ascending: false });
+  if (error) throw error;
+  const um = await buildUserMap();
+  res.json(((data ?? []) as DbQuizSubmission[]).map((s) => ({
+    id: s.id, quizId: s.quiz_id, studentId: s.student_id,
+    studentName: um.get(s.student_id) || "",
+    answers: s.answers, score: s.score, maxScore: s.max_score,
+    submittedAt: s.submitted_at, createdAt: s.created_at,
+  })));
+});
+
+router.get("/quizzes/:id/my-submission", requireAuth, async (req: AuthRequest, res) => {
+  const db = getSupabase();
+  const { data, error } = await db.from("school_quiz_submissions").select("*")
+    .eq("quiz_id", String(req.params["id"])).eq("student_id", String(req.user!.id))
+    .order("submitted_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw error;
+  res.json(data || null);
+});
+
 export default router;
 

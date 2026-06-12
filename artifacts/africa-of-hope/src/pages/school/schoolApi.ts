@@ -330,6 +330,46 @@ export const apiMarkMessageRead = (id: string) =>
 export const apiDeleteMessage = (id: string) =>
   apiFetch<void>(`/messages/${id}`, { method: "DELETE" });
 
+/* ─── Quizzes ────────────────────────────────────────────────── */
+export interface QuizQuestion {
+  id: string; type: "mcq" | "true_false" | "short_answer";
+  text: string; options?: string[]; correct?: string;
+}
+
+export interface Quiz {
+  id: string; courseId: string; courseTitle?: string;
+  title: string; instructions: string;
+  dueDate: string | null; timeLimitMins: number;
+  status: "draft" | "published";
+  questions: QuizQuestion[];
+  createdBy: string; createdAt: string;
+}
+
+export interface QuizSubmission {
+  id: string; quizId: string; studentId: string; studentName?: string;
+  answers: Record<string, string>; score: number; maxScore: number;
+  submittedAt: string; createdAt: string;
+}
+
+export const apiGetQuizzes = (params?: { courseId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.courseId) q.set("courseId", params.courseId);
+  const qs = q.toString();
+  return apiFetch<Quiz[]>(`/quizzes${qs ? `?${qs}` : ""}`);
+};
+export const apiCreateQuiz = (data: Omit<Quiz, "id" | "createdAt" | "courseTitle">) =>
+  apiFetch<Quiz>("/quizzes", { method: "POST", body: JSON.stringify(data) });
+export const apiUpdateQuiz = (id: string, updates: Partial<Quiz>) =>
+  apiFetch<Quiz>(`/quizzes/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+export const apiDeleteQuiz = (id: string) =>
+  apiFetch<void>(`/quizzes/${id}`, { method: "DELETE" });
+export const apiSubmitQuiz = (id: string, answers: Record<string, string>) =>
+  apiFetch<QuizSubmission & { score: number; maxScore: number }>(`/quizzes/${id}/submit`, { method: "POST", body: JSON.stringify({ answers }) });
+export const apiGetQuizSubmissions = (id: string) =>
+  apiFetch<QuizSubmission[]>(`/quizzes/${id}/submissions`);
+export const apiGetMyQuizSubmission = (id: string) =>
+  apiFetch<QuizSubmission | null>(`/quizzes/${id}/my-submission`);
+
 /* ─── Reports ────────────────────────────────────────────────── */
 export const apiGetReportOverview = () => apiFetch<ReportOverview>("/reports/overview");
 

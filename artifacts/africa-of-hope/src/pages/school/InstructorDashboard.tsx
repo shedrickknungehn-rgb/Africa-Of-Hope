@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2, Menu, X, ClipboardCheck, GraduationCap, Plus, Trash2, Bell, Mail, Calendar, Clock, AlertTriangle } from "lucide-react";
+import { BookOpen, Users, Video, FileText, LogOut, Home, BarChart2, Menu, X, ClipboardCheck, GraduationCap, Plus, Trash2, Bell, Mail, Calendar, Clock, AlertTriangle, ClipboardList } from "lucide-react";
 import {
   User, Course, Enrollment, Grade, Attendance, Announcement, TimetableSlot, Exam,
   apiGetCourses, apiGetUsers, apiGetEnrollments, apiGetGrades, apiGetAttendance,
@@ -9,8 +9,9 @@ import {
   clearSession,
 } from "./schoolApi";
 import MessagingTab from "./admin/MessagingTab";
+import AssessmentsTab from "./admin/AssessmentsTab";
 
-type Tab = "overview" | "classes" | "roster" | "attendance" | "grades" | "materials" | "schedule" | "announcements" | "inbox";
+type Tab = "overview" | "classes" | "roster" | "attendance" | "grades" | "materials" | "schedule" | "assessments" | "announcements" | "inbox";
 
 const ATT_STATUSES = ["present", "absent", "late", "excused"] as const;
 const ATT_COLORS: Record<string, string> = {
@@ -73,6 +74,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
     { key: "attendance" as Tab, label: "Attendance", icon: ClipboardCheck },
     { key: "grades" as Tab, label: "Grades", icon: GraduationCap },
     { key: "materials" as Tab, label: "Materials", icon: FileText },
+    { key: "assessments" as Tab, label: "Assessments", icon: ClipboardList },
     { key: "schedule" as Tab, label: "Schedule", icon: Calendar },
     { key: "inbox" as Tab, label: "Inbox", icon: Mail },
     { key: "announcements" as Tab, label: "Announcements", icon: Bell },
@@ -139,6 +141,7 @@ export default function InstructorDashboard({ user }: { user: User }) {
           {tab === "attendance" && <AttendanceView myCourses={myCourses} rosterFor={rosterFor} />}
           {tab === "grades" && <GradesView myCourses={myCourses} rosterFor={rosterFor} grades={grades} onRefresh={() => apiGetGrades().then(setGrades).catch(() => {})} />}
           {tab === "materials" && <MaterialsView myCourses={myCourses} onRefresh={() => apiGetCourses().then(setCourses).catch(() => {})} />}
+          {tab === "assessments" && <AssessmentsTab courses={myCourses} users={students} currentUser={user} />}
           {tab === "schedule" && <InstructorScheduleView myCourseIds={myCourseIds} timetable={timetable} exams={exams} />}
           {tab === "inbox" && <MessagingTab currentUser={user} />}
           {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
