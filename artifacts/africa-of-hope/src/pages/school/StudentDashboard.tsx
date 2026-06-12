@@ -1,16 +1,17 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar, Mail, Clock, ClipboardList, CheckCircle, AlertCircle } from "lucide-react";
+import { BookOpen, Video, FileText, Home, LogOut, BarChart2, Bell, Menu, X, GraduationCap, ClipboardCheck, DollarSign, Calendar, Mail, Clock, ClipboardList, CheckCircle, AlertCircle, Library, Search } from "lucide-react";
 import {
   User, Course, Enrollment, Grade, Attendance, Payment, Announcement, SchoolEvent, TimetableSlot, Exam,
-  Quiz, QuizSubmission,
+  Quiz, QuizSubmission, Book, Borrow,
   apiGetCourses, apiGetEnrollments, apiGetGrades, apiGetAttendance, apiGetPayments,
   apiGetAnnouncements, apiGetEvents, apiGetTimetable, apiGetExams, clearSession,
   apiGetQuizzes, apiSubmitQuiz, apiGetMyQuizSubmission,
+  apiGetBooks, apiGetBorrows,
 } from "./schoolApi";
 import MessagingTab from "./admin/MessagingTab";
 
-type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "schedule" | "assessments" | "inbox" | "announcements" | "events";
+type Tab = "overview" | "courses" | "transcript" | "attendance" | "finance" | "schedule" | "assessments" | "inbox" | "announcements" | "events" | "library";
 
 export default function StudentDashboard({ user }: { user: User }) {
   const [, navigate] = useLocation();
@@ -27,6 +28,8 @@ export default function StudentDashboard({ user }: { user: User }) {
   const [events, setEvents] = useState<SchoolEvent[]>([]);
   const [timetable, setTimetable] = useState<TimetableSlot[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [borrows, setBorrows] = useState<Borrow[]>([]);
 
   useEffect(() => {
     apiGetCourses().then(setCourses).catch(() => {});
@@ -38,6 +41,8 @@ export default function StudentDashboard({ user }: { user: User }) {
     apiGetEvents().then(setEvents).catch(() => {});
     apiGetTimetable().then(setTimetable).catch(() => {});
     apiGetExams().then(setExams).catch(() => {});
+    apiGetBooks().then(setBooks).catch(() => {});
+    apiGetBorrows({ userId: user.id }).then(setBorrows).catch(() => {});
   }, [user.id]);
 
   const myCourses = useMemo(() => {
@@ -61,6 +66,7 @@ export default function StudentDashboard({ user }: { user: User }) {
     { key: "inbox" as Tab, label: "Inbox", icon: Mail },
     { key: "announcements" as Tab, label: "Announcements", icon: Bell },
     { key: "events" as Tab, label: "Events", icon: Calendar },
+    { key: "library" as Tab, label: "Library", icon: Library },
   ];
 
   const changeTab = (t: Tab) => { setTab(t); setSidebarOpen(false); };
@@ -124,6 +130,7 @@ export default function StudentDashboard({ user }: { user: User }) {
           {tab === "inbox" && <MessagingTab currentUser={user} />}
           {tab === "announcements" && <AnnouncementsView announcements={myAnnouncements} />}
           {tab === "events" && <EventsView events={events} />}
+          {tab === "library" && <StudentLibraryView books={books} borrows={borrows} />}
         </div>
       </div>
     </div>
@@ -741,6 +748,124 @@ function QuizTaker({ quiz, userId, onDone, onCancel }: {
           {submitting ? "Submitting…" : "Submit Quiz"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ─── Library (Student) ───────────────────────────────────────── */
+function StudentLibraryView({ books, borrows }: { books: Book[]; borrows: Borrow[] }) {
+  const [search, setSearch] = useState("");
+  const now = Date.now();
+
+  const filtered = books.filter((b) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) || b.isbn.toLowerCase().includes(q) || b.category.toLowerCase().includes(q);
+  });
+
+  const overdue = borrows.filter((b) => b.status === "borrowed" && new Date(b.dueDate).getTime() < now);
+  const active = borrows.filter((b) => b.status === "borrowed" && new Date(b.dueDate).getTime() >= now);
+  const past = borrows.filter((b) => b.status !== "borrowed");
+
+  return (
+    <div className="space-y-6">
+      {overdue.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+          <p className="font-black text-red-700 text-sm mb-2">⚠ Overdue Books ({overdue.length})</p>
+          <div className="space-y-2">
+            {overdue.map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-3 bg-white rounded-xl px-4 py-2.5">
+                <div>
+                  <p className="font-bold text-sm text-[#0f0f0f]">{b.bookTitle}</p>
+                  <p className="text-xs text-red-600 font-bold">Due {new Date(b.dueDate).toLocaleDateString()} · Fine: ${parseFloat(b.fineAmount || "0").toFixed(2)}</p>
+                </div>
+                <span className="text-[10px] font-black uppercase bg-red-100 text-red-600 px-2 py-1 rounded-full">Overdue</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {active.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="bg-[#0d3d1a] text-white px-5 py-3">
+            <p className="font-black text-sm">Currently Borrowed ({active.length})</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {active.map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <div>
+                  <p className="font-bold text-sm text-[#0f0f0f]">{b.bookTitle}</p>
+                  <p className="text-xs text-gray-400">Due {new Date(b.dueDate).toLocaleDateString()}</p>
+                </div>
+                <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Borrowed</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center gap-3 mb-4">
+          <h3 className="font-black text-[#0f0f0f]">Book Catalog</h3>
+          <div className="flex-1 relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search title, author, ISBN…"
+              className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-gray-200 rounded-xl" />
+          </div>
+        </div>
+        {filtered.length === 0 ? (
+          <div className="bg-white rounded-2xl p-10 shadow-sm text-center text-gray-400">
+            <Library className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+            <p className="font-bold">{search ? "No books match your search." : "No books in the catalog yet."}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((book) => {
+              const available = book.availableCopies > 0;
+              return (
+                <div key={book.id} className="bg-white rounded-2xl shadow-sm p-4 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="w-9 h-9 bg-[#0d3d1a] rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Library className="w-4 h-4 text-[#d4a017]" />
+                    </div>
+                    <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full flex-shrink-0 ${available ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                      {available ? `${book.availableCopies} avail.` : "Unavailable"}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-black text-sm text-[#0f0f0f] leading-snug">{book.title}</p>
+                    {book.author && <p className="text-xs text-gray-500 mt-0.5">by {book.author}</p>}
+                    {book.category && <p className="text-[10px] font-bold text-[#1a6b2a] uppercase mt-1">{book.category}</p>}
+                    {book.isbn && <p className="text-[10px] text-gray-400 mt-0.5">ISBN: {book.isbn}</p>}
+                  </div>
+                  {book.description && <p className="text-xs text-gray-400 leading-snug line-clamp-2">{book.description}</p>}
+                  <p className="text-[10px] text-gray-400 mt-auto">{book.totalCopies} total cop{book.totalCopies === 1 ? "y" : "ies"}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {past.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="bg-gray-50 px-5 py-3 border-b border-gray-100">
+            <p className="font-black text-sm text-gray-600">Borrow History ({past.length})</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {past.map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <div>
+                  <p className="font-bold text-sm text-[#0f0f0f]">{b.bookTitle}</p>
+                  <p className="text-xs text-gray-400">Returned {b.returnedDate ? new Date(b.returnedDate).toLocaleDateString() : "—"}</p>
+                </div>
+                <span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-2 py-1 rounded-full">{b.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
