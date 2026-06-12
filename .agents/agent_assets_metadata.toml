@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "9GXpCTGw_S1GKReXCO7ii"
+uri = "file://supabase/RUN_THIS_IN_SUPABASE.txt"
+type = "text"
+title = "School database setup — run in Supabase SQL Editor"
