@@ -13,6 +13,6 @@
 // Note: this entry intentionally skips index.ts, so `app.listen()` and
 // `seedSchoolData()` do not run on Vercel. Seed/demo data comes from the
 // Supabase migrations, and the function is stateless by design.
-import app from "@workspace/api-server/app";
+import app from "../artifacts/api-server/dist/app.mjs";
 
 export default app;
