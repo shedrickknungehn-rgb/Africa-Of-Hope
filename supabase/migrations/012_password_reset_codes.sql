@@ -20,9 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_codes_expires_at
 ALTER TABLE password_reset_codes ENABLE ROW LEVEL SECURITY;
 
 -- Only the service role (backend API) can touch reset codes.
+DROP POLICY IF EXISTS "service_role_only_reset_codes"
+ON password_reset_codes;
+
 CREATE POLICY "service_role_only_reset_codes"
-  ON password_reset_codes
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
+    ON password_reset_codes
