@@ -156,6 +156,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
                 setForm({ ...form, role: event.target.value as User["role"] })
               }
               className="mt-1 w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm font-normal"
+              disabled={editing?.id === currentUser.id}
             >
               {ALL_ROLES.map((role) => (
                 <option key={role} value={role}>
@@ -259,7 +260,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
                 Inactive
               </span>
             )}
-            {isSupportedRole(user.role) ? (
+            {isSupportedRole(user.role) && user.id !== currentUser.id ? (
               <button
                 onClick={() => void toggleActivation(user)}
                 className={`rounded-lg p-2 ${user.isActive === false ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}
@@ -276,11 +277,11 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
               >
                 <Power className="h-4 w-4" />
               </button>
-            ) : (
+            ) : !isSupportedRole(user.role) ? (
               <span className="text-xs font-medium text-amber-700">
                 Convert role to activate
               </span>
-            )}
+            ) : null}
             <button
               onClick={() => openEdit(user)}
               className="rounded-lg bg-blue-50 p-2 text-blue-600"

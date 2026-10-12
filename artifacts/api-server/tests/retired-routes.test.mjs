@@ -9,13 +9,83 @@ let baseUrl;
 let mock;
 
 const baseUsers = () => [
-  { id: 1, username: "admin", password: "pw", name: "Admin", email: "admin@example.test", phone: "", role: "admin", is_active: true, created_at: "2026-01-01" },
-  { id: 2, username: "instructor", password: "pw", name: "Instructor", email: "instructor@example.test", phone: "", role: "instructor", is_active: true, created_at: "2026-01-01" },
-  { id: 3, username: "student", password: "pw", name: "Student", email: "student@example.test", phone: "", role: "student", is_active: true, created_at: "2026-01-01" },
-  { id: 4, username: "inactive", password: "pw", name: "Inactive", email: "inactive@example.test", phone: "", role: "student", is_active: false, created_at: "2026-01-01" },
-  { id: 5, username: "legacy", password: "pw", name: "Legacy", email: "legacy@example.test", phone: "", role: "parent", is_active: false, created_at: "2026-01-01" },
-  { id: 6, username: "other-student", password: "pw", name: "Other Student", email: "other@example.test", phone: "", role: "student", is_active: true, created_at: "2026-01-01" },
-  { id: 7, username: "super", password: "pw", name: "Super", email: "super@example.test", phone: "", role: "super_admin", is_active: true, created_at: "2026-01-01" },
+  {
+    id: 1,
+    username: "admin",
+    password: "pw",
+    name: "Admin",
+    email: "admin@example.test",
+    phone: "",
+    role: "admin",
+    is_active: true,
+    created_at: "2026-01-01",
+  },
+  {
+    id: 2,
+    username: "instructor",
+    password: "pw",
+    name: "Instructor",
+    email: "instructor@example.test",
+    phone: "",
+    role: "instructor",
+    is_active: true,
+    created_at: "2026-01-01",
+  },
+  {
+    id: 3,
+    username: "student",
+    password: "pw",
+    name: "Student",
+    email: "student@example.test",
+    phone: "",
+    role: "student",
+    is_active: true,
+    created_at: "2026-01-01",
+  },
+  {
+    id: 4,
+    username: "inactive",
+    password: "pw",
+    name: "Inactive",
+    email: "inactive@example.test",
+    phone: "",
+    role: "student",
+    is_active: false,
+    created_at: "2026-01-01",
+  },
+  {
+    id: 5,
+    username: "legacy",
+    password: "pw",
+    name: "Legacy",
+    email: "legacy@example.test",
+    phone: "",
+    role: "parent",
+    is_active: false,
+    created_at: "2026-01-01",
+  },
+  {
+    id: 6,
+    username: "other-student",
+    password: "pw",
+    name: "Other Student",
+    email: "other@example.test",
+    phone: "",
+    role: "student",
+    is_active: true,
+    created_at: "2026-01-01",
+  },
+  {
+    id: 7,
+    username: "super",
+    password: "pw",
+    name: "Super",
+    email: "super@example.test",
+    phone: "",
+    role: "super_admin",
+    is_active: true,
+    created_at: "2026-01-01",
+  },
 ];
 
 class Query {
@@ -45,7 +115,9 @@ class Query {
   }
 
   in(column, values) {
-    this.filters.push((row) => values.map(String).includes(String(row[column])));
+    this.filters.push((row) =>
+      values.map(String).includes(String(row[column])),
+    );
     return this;
   }
 
@@ -95,7 +167,9 @@ class Query {
       return { data: null, error: { message: "database unavailable" } };
     }
     const rows = this.db.tables[this.table] ?? [];
-    let matched = rows.filter((row) => this.filters.every((filter) => filter(row)));
+    let matched = rows.filter((row) =>
+      this.filters.every((filter) => filter(row)),
+    );
     if (this.operation === "update") {
       matched.forEach((row) => Object.assign(row, this.values));
     } else if (this.operation === "delete") {
@@ -107,11 +181,15 @@ class Query {
     }
     if (this.orderBy) {
       const { column, ascending } = this.orderBy;
-      matched = [...matched].sort((left, right) => String(left[column]).localeCompare(String(right[column])) * (ascending ? 1 : -1));
+      matched = [...matched].sort(
+        (left, right) =>
+          String(left[column]).localeCompare(String(right[column])) *
+          (ascending ? 1 : -1),
+      );
     }
     if (this.maxRows !== undefined) matched = matched.slice(0, this.maxRows);
     if (this.head) return { data: null, count: matched.length, error: null };
-    const data = this.singleResult ? matched[0] ?? null : matched;
+    const data = this.singleResult ? (matched[0] ?? null) : matched;
     return { data, error: null };
   }
 }
@@ -122,17 +200,91 @@ function createMock() {
     tables: {
       school_users: baseUsers(),
       school_courses: [
-        { id: "course-owned", title: "Owned course", instructor_id: "2", duration: "1 month", fee: "", students: [], materials: [], status: "active", category: "", created_at: "2026-01-01" },
-        { id: "course-other", title: "Other course", instructor_id: "1", duration: "1 month", fee: "", students: [], materials: [], status: "active", category: "", created_at: "2026-01-01" },
+        {
+          id: "course-owned",
+          title: "Owned course",
+          instructor_id: "2",
+          duration: "1 month",
+          fee: "",
+          students: [],
+          materials: [],
+          status: "active",
+          category: "",
+          created_at: "2026-01-01",
+        },
+        {
+          id: "course-other",
+          title: "Other course",
+          instructor_id: "1",
+          duration: "1 month",
+          fee: "",
+          students: [],
+          materials: [],
+          status: "active",
+          category: "",
+          created_at: "2026-01-01",
+        },
       ],
       school_enrollments: [
-        { id: "enrollment-1", student_id: "3", course_id: "course-owned", status: "active", fee: "", notes: "", enrolled_at: "2026-01-01", created_at: "2026-01-01" },
-        { id: "enrollment-2", student_id: "6", course_id: "course-other", status: "active", fee: "", notes: "", enrolled_at: "2026-01-01", created_at: "2026-01-01" },
+        {
+          id: "enrollment-1",
+          student_id: "3",
+          course_id: "course-owned",
+          status: "active",
+          fee: "",
+          notes: "",
+          enrolled_at: "2026-01-01",
+          created_at: "2026-01-01",
+        },
+        {
+          id: "enrollment-2",
+          student_id: "6",
+          course_id: "course-other",
+          status: "active",
+          fee: "",
+          notes: "",
+          enrolled_at: "2026-01-01",
+          created_at: "2026-01-01",
+        },
       ],
       school_quizzes: [
-        { id: "quiz-1", course_id: "course-owned", title: "Quiz", instructions: "", due_date: null, time_limit_mins: 0, status: "published", questions: [{ id: "q1", type: "mcq", text: "Secret", options: ["A", "B"], correct: "A" }], created_by: "2", created_at: "2026-01-01" },
+        {
+          id: "quiz-1",
+          course_id: "course-owned",
+          title: "Quiz",
+          instructions: "",
+          due_date: null,
+          time_limit_mins: 0,
+          status: "published",
+          questions: [
+            {
+              id: "q1",
+              type: "mcq",
+              text: "Secret",
+              options: ["A", "B"],
+              correct: "A",
+            },
+          ],
+          created_by: "2",
+          created_at: "2026-01-01",
+        },
       ],
-      school_payments: [{ id: "payment-1", student_id: "3", course_id: "course-owned", enrollment_id: "enrollment-1", amount: "10", status: "pending", method: "", reference: "", due_date: null, paid_at: null, notes: "", created_at: "2026-01-01" }],
+      school_payments: [
+        {
+          id: "payment-1",
+          student_id: "3",
+          course_id: "course-owned",
+          enrollment_id: "enrollment-1",
+          amount: "10",
+          status: "pending",
+          method: "",
+          reference: "",
+          due_date: null,
+          paid_at: null,
+          notes: "",
+          created_at: "2026-01-01",
+        },
+      ],
       school_grades: [],
     },
     from(table) {
@@ -143,7 +295,9 @@ function createMock() {
 }
 
 function auth(userId, staleRole = "admin") {
-  const user = mock.tables.school_users.find((candidate) => candidate.id === userId);
+  const user = mock.tables.school_users.find(
+    (candidate) => candidate.id === userId,
+  );
   return `Bearer ${jwt.sign({ id: userId, username: user?.username ?? "stale", name: "Token", email: "token@example.test", role: staleRole }, "aoh-school-secret-2026")}`;
 }
 
@@ -163,7 +317,9 @@ before(async () => {
 
 after(async () => {
   setSupabaseClientForTest(null);
-  await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
 });
 
 beforeEach(() => {
@@ -178,27 +334,71 @@ test("health endpoints remain available", async () => {
   }
 });
 
-test("retired routes return JSON 404 even with a valid token", async () => {
-  for (const path of ["/sessions", "/reports/hr", "/books"]) {
-    const response = await request(path, { headers: { authorization: auth(1) } });
-    assert.equal(response.status, 404, path);
-    assert.deepEqual(await response.json(), { error: "Not found" });
+test("retired routes return JSON 404 with and without a valid token", async () => {
+  const retiredPaths = [
+    "/sessions",
+    "/attendance",
+    "/announcements",
+    "/events",
+    "/parent-links",
+    "/users/my-children",
+    "/staff",
+    "/leave",
+    "/payroll",
+    "/messages",
+    "/timetable",
+    "/exams",
+    "/books",
+    "/borrows",
+    "/reports/hr",
+    "/reports/attendance",
+  ];
+
+  for (const path of retiredPaths) {
+    for (const headers of [{}, { authorization: auth(1) }]) {
+      const response = await request(path, { headers });
+      assert.equal(response.status, 404, path);
+      assert.deepEqual(await response.json(), { error: "Not found" });
+    }
+  }
+});
+
+test("retained routes require authentication", async () => {
+  for (const path of [
+    "/me",
+    "/courses",
+    "/enrollments",
+    "/quizzes",
+    "/grades",
+    "/payments",
+  ]) {
+    const response = await request(path);
+    assert.equal(response.status, 401, path);
+    assert.deepEqual(await response.json(), { error: "Unauthorized" });
   }
 });
 
 test("inactive and unsupported accounts cannot use stale JWT privileges", async () => {
   for (const userId of [4, 5]) {
-    const response = await request("/me", { headers: { authorization: auth(userId, "super_admin") } });
+    const response = await request("/me", {
+      headers: { authorization: auth(userId, "super_admin") },
+    });
     assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), { error: "This account is no longer authorized" });
+    assert.deepEqual(await response.json(), {
+      error: "This account is no longer authorized",
+    });
   }
 });
 
 test("authorization lookup outages return 503 instead of 401", async () => {
   mock.lookupError = true;
-  const response = await request("/me", { headers: { authorization: auth(1) } });
+  const response = await request("/me", {
+    headers: { authorization: auth(1) },
+  });
   assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "Authentication service unavailable" });
+  assert.deepEqual(await response.json(), {
+    error: "Authentication service unavailable",
+  });
 });
 
 test("instructors cannot manage another instructor's course", async () => {
@@ -211,13 +411,20 @@ test("instructors cannot manage another instructor's course", async () => {
 });
 
 test("students cannot query another student's enrollment records", async () => {
-  const response = await request("/enrollments?studentId=6", { headers: { authorization: auth(3, "student") } });
+  const response = await request("/enrollments?studentId=6", {
+    headers: { authorization: auth(3, "student") },
+  });
   assert.equal(response.status, 200);
-  assert.deepEqual((await response.json()).map((row) => row.id), ["enrollment-1"]);
+  assert.deepEqual(
+    (await response.json()).map((row) => row.id),
+    ["enrollment-1"],
+  );
 });
 
 test("student quiz responses never include answer keys", async () => {
-  const response = await request("/quizzes", { headers: { authorization: auth(3, "student") } });
+  const response = await request("/quizzes", {
+    headers: { authorization: auth(3, "student") },
+  });
   assert.equal(response.status, 200);
   const [quiz] = await response.json();
   assert.equal(quiz.questions[0].correct, undefined);
@@ -225,7 +432,9 @@ test("student quiz responses never include answer keys", async () => {
 });
 
 test("non-admins cannot view another student's payments", async () => {
-  const response = await request("/payments?studentId=3", { headers: { authorization: auth(2, "instructor") } });
+  const response = await request("/payments?studentId=3", {
+    headers: { authorization: auth(2, "instructor") },
+  });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), []);
 });
@@ -252,12 +461,42 @@ test("administrators can reactivate only supported roles and cannot manage super
     body: JSON.stringify({ role: "super_admin" }),
   });
   assert.equal(promote.status, 403);
+
+  const editSuperAdmin = await request("/users/7", {
+    method: "PATCH",
+    headers: { authorization: auth(1), "content-type": "application/json" },
+    body: JSON.stringify({ name: "Changed" }),
+  });
+  assert.equal(editSuperAdmin.status, 403);
+
+  const deleteSuperAdmin = await request("/users/7", {
+    method: "DELETE",
+    headers: { authorization: auth(1) },
+  });
+  assert.equal(deleteSuperAdmin.status, 403);
+});
+
+test("administrators cannot deactivate or demote their own account", async () => {
+  for (const body of [{ isActive: false }, { role: "student" }]) {
+    const response = await request("/users/1", {
+      method: "PATCH",
+      headers: { authorization: auth(1), "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Cannot deactivate or demote your own account",
+    });
+  }
 });
 
 test("the last active super administrator cannot be demoted or deleted", async () => {
   const demote = await request("/users/7", {
     method: "PATCH",
-    headers: { authorization: auth(7, "super_admin"), "content-type": "application/json" },
+    headers: {
+      authorization: auth(7, "super_admin"),
+      "content-type": "application/json",
+    },
     body: JSON.stringify({ role: "admin" }),
   });
   assert.equal(demote.status, 409);
@@ -270,7 +509,10 @@ test("the last active super administrator cannot be demoted or deleted", async (
 });
 
 test("course mutations reject missing and retired-field payloads", async () => {
-  const missing = await request("/courses", { method: "POST", headers: { authorization: auth(1) } });
+  const missing = await request("/courses", {
+    method: "POST",
+    headers: { authorization: auth(1) },
+  });
   assert.equal(missing.status, 400);
 
   const retired = await request("/courses/course-owned", {

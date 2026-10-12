@@ -572,7 +572,7 @@ function StudentAssessments({
               <div className="text-right">
                 {submission && (
                   <p className="mb-2 text-sm font-bold text-[#1a6b2a]">
-                    Best score: {submission.score}/{submission.maxScore}
+                    Latest score: {submission.score}/{submission.maxScore}
                     {percentage !== null && ` (${percentage}%)`}
                   </p>
                 )}

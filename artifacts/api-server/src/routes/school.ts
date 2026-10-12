@@ -293,7 +293,9 @@ async function getNameMaps(db: ReturnType<typeof getSupabase>) {
   return { um, cm };
 }
 
-async function activeSuperAdminCount(db: ReturnType<typeof getSupabase>): Promise<number> {
+async function activeSuperAdminCount(
+  db: ReturnType<typeof getSupabase>,
+): Promise<number> {
   const { data, error } = await db
     .from("school_users")
     .select("id")
@@ -687,45 +689,50 @@ router.get("/users", requireAuth, async (req: AuthRequest, res) => {
   );
 });
 
-router.post("/users", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const { username, password, name, email, phone, role } = req.body as Record<
-    string,
-    string
-  >;
-  if (!username || !password || !name) {
-    res.status(400).json({ error: "Username, password, and name required" });
-    return;
-  }
-  const accountRole = role || "student";
-  if (!SUPPORTED_ROLES.has(accountRole)) {
-    res.status(400).json({ error: "Unsupported academy role" });
-    return;
-  }
-  if (accountRole === "super_admin" && req.user!.role !== "super_admin") {
-    res.status(403).json({ error: "Super administrator access required" });
-    return;
-  }
-  const db = getSupabase();
-  const { data, error } = await db
-    .from("school_users")
-    .insert({
-      username: username.trim(),
-      password,
-      name,
-      email: email || "",
-      phone: phone || "",
-      role: accountRole,
-    })
-    .select()
-    .single();
-  if (error) {
-    if (error.code === "23505" || error.message?.includes("unique"))
-      res.status(409).json({ error: "Username already exists" });
-    else throw error;
-    return;
-  }
-  res.status(201).json(fmtUser(data as DbUser));
-});
+router.post(
+  "/users",
+  requireAuth,
+  requireMgmt,
+  async (req: AuthRequest, res) => {
+    const { username, password, name, email, phone, role } = req.body as Record<
+      string,
+      string
+    >;
+    if (!username || !password || !name) {
+      res.status(400).json({ error: "Username, password, and name required" });
+      return;
+    }
+    const accountRole = role || "student";
+    if (!SUPPORTED_ROLES.has(accountRole)) {
+      res.status(400).json({ error: "Unsupported academy role" });
+      return;
+    }
+    if (accountRole === "super_admin" && req.user!.role !== "super_admin") {
+      res.status(403).json({ error: "Super administrator access required" });
+      return;
+    }
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("school_users")
+      .insert({
+        username: username.trim(),
+        password,
+        name,
+        email: email || "",
+        phone: phone || "",
+        role: accountRole,
+      })
+      .select()
+      .single();
+    if (error) {
+      if (error.code === "23505" || error.message?.includes("unique"))
+        res.status(409).json({ error: "Username already exists" });
+      else throw error;
+      return;
+    }
+    res.status(201).json(fmtUser(data as DbUser));
+  },
+);
 
 router.patch(
   "/users/:id",
@@ -750,7 +757,14 @@ router.patch(
     }
     const target = existing as { role: string; is_active: boolean };
     const accountRole = typeof role === "string" ? role : target.role;
-    const accountIsActive = typeof isActive === "boolean" ? isActive : target.is_active;
+    const accountIsActive =
+      typeof isActive === "boolean" ? isActive : target.is_active;
+    if (id === req.user!.id && (!accountIsActive || !MGMT.has(accountRole))) {
+      res
+        .status(400)
+        .json({ error: "Cannot deactivate or demote your own account" });
+      return;
+    }
     if (typeof role === "string" && !SUPPORTED_ROLES.has(accountRole)) {
       res.status(400).json({ error: "Unsupported academy role" });
       return;
@@ -772,7 +786,9 @@ router.patch(
       (!accountIsActive || accountRole !== "super_admin") &&
       (await activeSuperAdminCount(db)) <= 1
     ) {
-      res.status(409).json({ error: "At least one active super administrator is required" });
+      res
+        .status(409)
+        .json({ error: "At least one active super administrator is required" });
       return;
     }
 
@@ -820,8 +836,14 @@ router.delete(
       res.status(403).json({ error: "Super administrator access required" });
       return;
     }
-    if (target.role === "super_admin" && target.is_active && (await activeSuperAdminCount(db)) <= 1) {
-      res.status(409).json({ error: "At least one active super administrator is required" });
+    if (
+      target.role === "super_admin" &&
+      target.is_active &&
+      (await activeSuperAdminCount(db)) <= 1
+    ) {
+      res
+        .status(409)
+        .json({ error: "At least one active super administrator is required" });
       return;
     }
     const { error } = await db.from("school_users").delete().eq("id", id);
