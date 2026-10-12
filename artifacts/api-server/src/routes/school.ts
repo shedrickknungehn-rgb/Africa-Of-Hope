@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import { getSupabase } from "../lib/db";
 import { signToken, verifyToken, type JwtPayload } from "../lib/jwt";
 import { isEmailConfigured, sendResetCodeEmail } from "../lib/mailer";
@@ -7,100 +12,317 @@ import { logger } from "../lib/logger";
 const router = Router();
 type AuthRequest = Request & { user?: JwtPayload };
 
-const MGMT = new Set(["admin", "super_admin", "director", "registrar", "academic_coordinator", "finance_officer", "hr_officer"]);
+const SUPPORTED_ROLES = new Set([
+  "student",
+  "instructor",
+  "admin",
+  "super_admin",
+]);
+const MGMT = new Set(["admin", "super_admin"]);
+const STAFF = new Set(["instructor", ...MGMT]);
 
-interface DbParentLink { id: string; parent_id: string; student_id: string; created_at: string; }
-
-async function getChildIds(db: ReturnType<typeof getSupabase>, parentId: string | number): Promise<string[]> {
-  const { data } = await db.from("parent_student_links").select("student_id").eq("parent_id", String(parentId));
-  return (data ?? []).map((r: { student_id: string }) => r.student_id);
-}
-
-function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
+async function requireAuth(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   const h = req.headers["authorization"];
-  if (!h?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
-  const p = verifyToken(h.slice(7));
-  if (!p) { res.status(401).json({ error: "Invalid or expired token" }); return; }
-  req.user = p; next();
-}
+  if (!h?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const tokenUser = verifyToken(h.slice(7));
+  if (!tokenUser) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
 
-function requireMgmt(req: AuthRequest, res: Response, next: NextFunction): void {
-  if (!req.user || !MGMT.has(req.user.role)) { res.status(403).json({ error: "Management access required" }); return; }
+  const { data, error } = await getSupabase()
+    .from("school_users")
+    .select("id, username, name, email, role, is_active")
+    .eq("id", tokenUser.id)
+    .maybeSingle();
+  const user = data as Omit<DbUser, "password" | "phone" | "created_at"> | null;
+  if (
+    error ||
+    !user ||
+    user.is_active !== true ||
+    !SUPPORTED_ROLES.has(user.role)
+  ) {
+    res.status(401).json({ error: "This account is no longer authorized" });
+    return;
+  }
+
+  // The database record, rather than the JWT claim, defines current privileges.
+  req.user = {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  };
   next();
 }
 
-const STAFF = new Set(["instructor", "assistant", ...MGMT]);
-function requireStaff(req: AuthRequest, res: Response, next: NextFunction): void {
-  if (!req.user || !STAFF.has(req.user.role)) { res.status(403).json({ error: "Staff access required" }); return; }
+function requireMgmt(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.user || !MGMT.has(req.user.role)) {
+    res.status(403).json({ error: "Management access required" });
+    return;
+  }
   next();
 }
 
-// Management and assistants may manage any class; an instructor only their own.
-async function assertCourseAccess(req: AuthRequest, res: Response, courseId: string): Promise<boolean> {
-  if (!courseId) { res.status(400).json({ error: "courseId required" }); return false; }
-  if (MGMT.has(req.user!.role) || req.user!.role === "assistant") return true;
+function requireStaff(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.user || !STAFF.has(req.user.role)) {
+    res.status(403).json({ error: "Staff access required" });
+    return;
+  }
+  next();
+}
+
+// Administrators may manage any course; an instructor only their own.
+async function assertCourseAccess(
+  req: AuthRequest,
+  res: Response,
+  courseId: string,
+): Promise<boolean> {
+  if (!courseId) {
+    res.status(400).json({ error: "courseId required" });
+    return false;
+  }
+  if (MGMT.has(req.user!.role)) return true;
   const db = getSupabase();
-  const { data } = await db.from("school_courses").select("instructor_id").eq("id", courseId).maybeSingle();
-  if (data && String((data as { instructor_id: string }).instructor_id) === String(req.user!.id)) return true;
-  res.status(403).json({ error: "You can only manage your own classes" });
+  const { data } = await db
+    .from("school_courses")
+    .select("instructor_id")
+    .eq("id", courseId)
+    .maybeSingle();
+  if (
+    data &&
+    String((data as { instructor_id: string }).instructor_id) ===
+      String(req.user!.id)
+  )
+    return true;
+  res.status(403).json({ error: "You can only manage your own courses" });
   return false;
 }
 
-function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
 
 const RESET_TTL_MS = 10 * 60 * 1000;
 // Lock a reset code after this many wrong guesses so the 6-digit code can't be brute-forced.
 const MAX_RESET_ATTEMPTS = 5;
-function genResetCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function genResetCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 /* ─── DB types ──────────────────────────────────────────────── */
-interface DbUser { id: number; username: string; password: string; name: string; email: string; phone?: string; role: string; is_active?: boolean; created_at: string; }
-interface DbCourse { id: string; title: string; description: string; instructor_id: string; duration: string; fee: string; schedule: string; students: string[]; materials: { title: string; url: string }[]; status: string; capacity?: number; category?: string; created_at: string; }
-interface DbSession { id: string; course_id: string; course_title: string; instructor_id: string; room_id: string; title: string; started_at: string; status: string; }
-interface DbEnrollment { id: string; student_id: string; course_id: string; status: string; fee: string; notes: string; enrolled_at: string; created_at: string; }
-interface DbAnnouncement { id: string; title: string; content: string; author_id: string; priority: string; target_roles: string[]; expires_at: string | null; created_at: string; }
-interface DbEvent { id: string; title: string; description: string; date: string; location: string; type: string; created_at: string; }
-interface DbPayment { id: string; student_id: string; course_id: string; enrollment_id: string; amount: string; status: string; method: string; reference: string; due_date: string | null; paid_at: string | null; notes: string; created_at: string; }
-interface DbAttendance { id: string; student_id: string; course_id: string; session_date: string; status: string; notes: string; recorded_by: string; created_at: string; }
-interface DbGrade { id: string; student_id: string; course_id: string; assessment: string; score: string; max_score: string; weight: string; grade: string; comment: string; recorded_by: string; created_at: string; }
-interface DbStaff { id: string; user_id: string; position: string; department: string; employment_type: string; hire_date: string | null; salary: string; status: string; emergency_contact: string; notes: string; created_at: string; }
-interface DbLeave { id: string; user_id: string; type: string; start_date: string; end_date: string; reason: string; status: string; reviewed_by: string; review_notes: string; created_at: string; }
-interface DbPayroll { id: string; user_id: string; period: string; gross: string; deductions: string; net: string; status: string; paid_at: string | null; notes: string; created_at: string; }
+interface DbUser {
+  id: number;
+  username: string;
+  password: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  is_active?: boolean;
+  created_at: string;
+}
+interface DbCourse {
+  id: string;
+  title: string;
+  description: string;
+  instructor_id: string;
+  duration: string;
+  fee: string;
+  students: string[];
+  materials: { title: string; url: string }[];
+  status: string;
+  category?: string;
+  created_at: string;
+}
+interface DbEnrollment {
+  id: string;
+  student_id: string;
+  course_id: string;
+  status: string;
+  fee: string;
+  notes: string;
+  enrolled_at: string;
+  created_at: string;
+}
+interface DbPayment {
+  id: string;
+  student_id: string;
+  course_id: string;
+  enrollment_id: string;
+  amount: string;
+  status: string;
+  method: string;
+  reference: string;
+  due_date: string | null;
+  paid_at: string | null;
+  notes: string;
+  created_at: string;
+}
+interface DbGrade {
+  id: string;
+  student_id: string;
+  course_id: string;
+  assessment: string;
+  score: string;
+  max_score: string;
+  weight: string;
+  grade: string;
+  comment: string;
+  recorded_by: string;
+  created_at: string;
+}
 
 /* ─── Formatters ────────────────────────────────────────────── */
-const fmtUser = (u: DbUser, pw = true) => ({ id: String(u.id), username: u.username, password: pw ? u.password : "", name: u.name, email: u.email, phone: u.phone || "", role: u.role, isActive: u.is_active ?? true, createdAt: u.created_at });
-const fmtCourse = (c: DbCourse) => ({ id: c.id, title: c.title, description: c.description, instructorId: c.instructor_id, duration: c.duration, fee: c.fee, schedule: c.schedule, students: Array.isArray(c.students) ? c.students : [], materials: Array.isArray(c.materials) ? c.materials : [], status: c.status, capacity: c.capacity ?? 30, category: c.category ?? "", createdAt: c.created_at });
-const fmtSession = (s: DbSession) => ({ id: s.id, courseId: s.course_id, courseTitle: s.course_title, instructorId: s.instructor_id, roomId: s.room_id, title: s.title, startedAt: s.started_at, status: s.status });
-const fmtEnrollment = (e: DbEnrollment, um = new Map<string, string>(), cm = new Map<string, string>()) => ({ id: e.id, studentId: e.student_id, studentName: um.get(e.student_id) || "", courseId: e.course_id, courseTitle: cm.get(e.course_id) || "", status: e.status, fee: e.fee, notes: e.notes, enrolledAt: e.enrolled_at, createdAt: e.created_at });
-const fmtAnnouncement = (a: DbAnnouncement, um = new Map<string, string>()) => ({ id: a.id, title: a.title, content: a.content, authorId: a.author_id, authorName: um.get(a.author_id) || "", priority: a.priority, targetRoles: Array.isArray(a.target_roles) ? a.target_roles : ["all"], expiresAt: a.expires_at, createdAt: a.created_at });
-const fmtEvent = (e: DbEvent) => ({ id: e.id, title: e.title, description: e.description, date: e.date, location: e.location, type: e.type, createdAt: e.created_at });
-const fmtPayment = (p: DbPayment, um = new Map<string, string>(), cm = new Map<string, string>()) => ({ id: p.id, studentId: p.student_id, studentName: um.get(p.student_id) || "", courseId: p.course_id, courseTitle: cm.get(p.course_id) || "", enrollmentId: p.enrollment_id, amount: p.amount, status: p.status, method: p.method, reference: p.reference, dueDate: p.due_date, paidAt: p.paid_at, notes: p.notes, createdAt: p.created_at });
-const fmtAttendance = (a: DbAttendance, um = new Map<string, string>(), cm = new Map<string, string>()) => ({ id: a.id, studentId: a.student_id, studentName: um.get(a.student_id) || "", courseId: a.course_id, courseTitle: cm.get(a.course_id) || "", sessionDate: a.session_date, status: a.status, notes: a.notes, recordedBy: a.recorded_by, createdAt: a.created_at });
-const fmtGrade = (g: DbGrade, um = new Map<string, string>(), cm = new Map<string, string>()) => ({ id: g.id, studentId: g.student_id, studentName: um.get(g.student_id) || "", courseId: g.course_id, courseTitle: cm.get(g.course_id) || "", assessment: g.assessment, score: g.score, maxScore: g.max_score, weight: g.weight, grade: g.grade, comment: g.comment, recordedBy: g.recorded_by, createdAt: g.created_at });
-const fmtStaff = (s: DbStaff, um = new Map<string, string>()) => ({ id: s.id, userId: s.user_id, userName: um.get(s.user_id) || "", position: s.position, department: s.department, employmentType: s.employment_type, hireDate: s.hire_date, salary: s.salary, status: s.status, emergencyContact: s.emergency_contact, notes: s.notes, createdAt: s.created_at });
-const fmtLeave = (l: DbLeave, um = new Map<string, string>()) => ({ id: l.id, userId: l.user_id, userName: um.get(l.user_id) || "", type: l.type, startDate: l.start_date, endDate: l.end_date, reason: l.reason, status: l.status, reviewedBy: l.reviewed_by, reviewNotes: l.review_notes, createdAt: l.created_at });
-const fmtPayroll = (p: DbPayroll, um = new Map<string, string>()) => ({ id: p.id, userId: p.user_id, userName: um.get(p.user_id) || "", period: p.period, gross: p.gross, deductions: p.deductions, net: p.net, status: p.status, paidAt: p.paid_at, notes: p.notes, createdAt: p.created_at });
+const fmtUser = (u: DbUser, pw = true) => ({
+  id: String(u.id),
+  username: u.username,
+  password: pw ? u.password : "",
+  name: u.name,
+  email: u.email,
+  phone: u.phone || "",
+  role: u.role,
+  isActive: u.is_active ?? true,
+  createdAt: u.created_at,
+});
+const fmtCourse = (c: DbCourse) => ({
+  id: c.id,
+  title: c.title,
+  description: c.description,
+  instructorId: c.instructor_id,
+  duration: c.duration,
+  fee: c.fee,
+  students: Array.isArray(c.students) ? c.students : [],
+  materials: Array.isArray(c.materials) ? c.materials : [],
+  status: c.status,
+  category: c.category ?? "",
+  createdAt: c.created_at,
+});
+const fmtEnrollment = (
+  e: DbEnrollment,
+  um = new Map<string, string>(),
+  cm = new Map<string, string>(),
+) => ({
+  id: e.id,
+  studentId: e.student_id,
+  studentName: um.get(e.student_id) || "",
+  courseId: e.course_id,
+  courseTitle: cm.get(e.course_id) || "",
+  status: e.status,
+  fee: e.fee,
+  notes: e.notes,
+  enrolledAt: e.enrolled_at,
+  createdAt: e.created_at,
+});
+const fmtPayment = (
+  p: DbPayment,
+  um = new Map<string, string>(),
+  cm = new Map<string, string>(),
+) => ({
+  id: p.id,
+  studentId: p.student_id,
+  studentName: um.get(p.student_id) || "",
+  courseId: p.course_id,
+  courseTitle: cm.get(p.course_id) || "",
+  enrollmentId: p.enrollment_id,
+  amount: p.amount,
+  status: p.status,
+  method: p.method,
+  reference: p.reference,
+  dueDate: p.due_date,
+  paidAt: p.paid_at,
+  notes: p.notes,
+  createdAt: p.created_at,
+});
+const fmtGrade = (
+  g: DbGrade,
+  um = new Map<string, string>(),
+  cm = new Map<string, string>(),
+) => ({
+  id: g.id,
+  studentId: g.student_id,
+  studentName: um.get(g.student_id) || "",
+  courseId: g.course_id,
+  courseTitle: cm.get(g.course_id) || "",
+  assessment: g.assessment,
+  score: g.score,
+  maxScore: g.max_score,
+  weight: g.weight,
+  grade: g.grade,
+  comment: g.comment,
+  recordedBy: g.recorded_by,
+  createdAt: g.created_at,
+});
 
 async function getNameMaps(db: ReturnType<typeof getSupabase>) {
   const [{ data: users }, { data: courses }] = await Promise.all([
     db.from("school_users").select("id, name"),
     db.from("school_courses").select("id, title"),
   ]);
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  const cm = new Map<string, string>((courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]));
+  const um = new Map<string, string>(
+    (users ?? []).map((u: { id: number; name: string }) => [
+      String(u.id),
+      u.name,
+    ]),
+  );
+  const cm = new Map<string, string>(
+    (courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]),
+  );
   return { um, cm };
 }
 
 /* ─── Auth ─────────────────────────────────────────────────── */
 router.post("/auth/login", async (req, res) => {
-  const { username, password } = req.body as { username?: string; password?: string };
-  if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
+  const { username, password } = req.body as {
+    username?: string;
+    password?: string;
+  };
+  if (!username || !password) {
+    res.status(400).json({ error: "Username and password required" });
+    return;
+  }
   const db = getSupabase();
-  const { data, error } = await db.from("school_users").select("*").eq("username", username.trim()).limit(1).single();
-  if (error || !data || (data as DbUser).password !== password) { res.status(401).json({ error: "Invalid username or password" }); return; }
+  const { data, error } = await db
+    .from("school_users")
+    .select("*")
+    .eq("username", username.trim())
+    .limit(1)
+    .single();
+  if (error || !data || (data as DbUser).password !== password) {
+    res.status(401).json({ error: "Invalid username or password" });
+    return;
+  }
   const u = data as DbUser;
-  if (u.is_active === false) { res.status(403).json({ error: "This account has been deactivated. Please contact an administrator." }); return; }
-  const token = signToken({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role });
+  if (u.is_active !== true || !SUPPORTED_ROLES.has(u.role)) {
+    res.status(403).json({
+      error:
+        "This account has been deactivated. Please contact an administrator.",
+    });
+    return;
+  }
+  const token = signToken({
+    id: u.id,
+    username: u.username,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+  });
   res.json({ token, user: fmtUser(u) });
 });
 
@@ -108,26 +330,80 @@ router.post("/auth/login", async (req, res) => {
    "Create Super Administrator" form instead of demo accounts. */
 router.get("/auth/setup-status", async (_req, res) => {
   const db = getSupabase();
-  const { count, error } = await db.from("school_users").select("id", { count: "exact", head: true }).eq("role", "super_admin");
-  if (error) { res.status(503).json({ error: "Database not ready. Please run the school migrations in Supabase." }); return; }
+  const { count, error } = await db
+    .from("school_users")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "super_admin");
+  if (error) {
+    res.status(503).json({
+      error:
+        "Database not ready. Please run the school migrations in Supabase.",
+    });
+    return;
+  }
   res.json({ needsSetup: (count ?? 0) === 0 });
 });
 
 router.post("/auth/setup", async (req, res) => {
-  const { name, username, email, password } = req.body as Record<string, string>;
-  if (!name || !username || !password) { res.status(400).json({ error: "Name, username, and password are required" }); return; }
-  if (password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters" }); return; }
+  const { name, username, email, password } = req.body as Record<
+    string,
+    string
+  >;
+  if (!name || !username || !password) {
+    res
+      .status(400)
+      .json({ error: "Name, username, and password are required" });
+    return;
+  }
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
   const db = getSupabase();
-  const { count, error: cErr } = await db.from("school_users").select("id", { count: "exact", head: true }).eq("role", "super_admin");
-  if (cErr) { res.status(503).json({ error: "Database not ready. Please run the school migrations in Supabase." }); return; }
-  if ((count ?? 0) > 0) { res.status(403).json({ error: "Setup has already been completed. Please sign in." }); return; }
-  const { data, error } = await db.from("school_users").insert({ username: username.trim(), password, name: name.trim(), email: (email || "").trim(), phone: "", role: "super_admin" }).select().single();
+  const { count, error: cErr } = await db
+    .from("school_users")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "super_admin");
+  if (cErr) {
+    res.status(503).json({
+      error:
+        "Database not ready. Please run the school migrations in Supabase.",
+    });
+    return;
+  }
+  if ((count ?? 0) > 0) {
+    res
+      .status(403)
+      .json({ error: "Setup has already been completed. Please sign in." });
+    return;
+  }
+  const { data, error } = await db
+    .from("school_users")
+    .insert({
+      username: username.trim(),
+      password,
+      name: name.trim(),
+      email: (email || "").trim(),
+      phone: "",
+      role: "super_admin",
+    })
+    .select()
+    .single();
   if (error) {
-    if (error.code === "23505" || error.message?.includes("unique")) { res.status(409).json({ error: "That username is already taken" }); return; }
+    if (error.code === "23505" || error.message?.includes("unique")) {
+      res.status(409).json({ error: "That username is already taken" });
+      return;
+    }
     throw error;
   }
   const u = data as DbUser;
-  const token = signToken({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role });
+  const token = signToken({
+    id: u.id,
+    username: u.username,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+  });
   res.status(201).json({ token, user: fmtUser(u) });
 });
 
@@ -139,70 +415,159 @@ router.post("/auth/setup", async (req, res) => {
 router.post("/auth/forgot-password", async (req, res) => {
   const { identifier } = req.body as { identifier?: string };
   const id = (identifier || "").trim();
-  if (!id) { res.status(400).json({ error: "Please enter your username or email" }); return; }
+  if (!id) {
+    res.status(400).json({ error: "Please enter your username or email" });
+    return;
+  }
   const db = getSupabase();
-  let { data } = await db.from("school_users").select("id, username, name, email, is_active").eq("username", id).limit(1).maybeSingle();
-  if (!data) ({ data } = await db.from("school_users").select("id, username, name, email, is_active").eq("email", id).limit(1).maybeSingle());
+  let { data } = await db
+    .from("school_users")
+    .select("id, username, name, email, is_active")
+    .eq("username", id)
+    .limit(1)
+    .maybeSingle();
+  if (!data)
+    ({ data } = await db
+      .from("school_users")
+      .select("id, username, name, email, is_active")
+      .eq("email", id)
+      .limit(1)
+      .maybeSingle());
 
   // Generic response used for every "we can't/​won't send" branch to avoid leaking account existence.
   const generic = { ok: true };
 
-  if (!data) { res.json(generic); return; }
-  const u = data as { id: number; username: string; name: string; email: string; is_active?: boolean };
+  if (!data) {
+    res.json(generic);
+    return;
+  }
+  const u = data as {
+    id: number;
+    username: string;
+    name: string;
+    email: string;
+    is_active?: boolean;
+  };
   // Inactive accounts cannot reset their password.
-  if (u.is_active === false) { res.json(generic); return; }
+  if (u.is_active === false) {
+    res.json(generic);
+    return;
+  }
   // No address on file → nothing to email; respond generically (and log for staff follow-up).
-  if (!u.email) { logger.warn({ username: u.username }, "Password reset requested but no email on file"); res.json(generic); return; }
+  if (!u.email) {
+    logger.warn(
+      { username: u.username },
+      "Password reset requested but no email on file",
+    );
+    res.json(generic);
+    return;
+  }
 
   const code = genResetCode();
   const nowIso = new Date().toISOString();
   // Opportunistically clear expired codes so the table stays small.
   await db.from("password_reset_codes").delete().lt("expires_at", nowIso);
-  const { error } = await db.from("password_reset_codes").upsert({
-    username_key: u.username.toLowerCase(),
-    user_id: u.id,
-    code,
-    attempts: 0,
-    expires_at: new Date(Date.now() + RESET_TTL_MS).toISOString(),
-    created_at: nowIso,
-  }, { onConflict: "username_key" });
-  if (error) { res.status(500).json({ error: "Could not start password reset. Please try again." }); return; }
+  const { error } = await db.from("password_reset_codes").upsert(
+    {
+      username_key: u.username.toLowerCase(),
+      user_id: u.id,
+      code,
+      attempts: 0,
+      expires_at: new Date(Date.now() + RESET_TTL_MS).toISOString(),
+      created_at: nowIso,
+    },
+    { onConflict: "username_key" },
+  );
+  if (error) {
+    res
+      .status(500)
+      .json({ error: "Could not start password reset. Please try again." });
+    return;
+  }
 
   if (isEmailConfigured()) {
     try {
       await sendResetCodeEmail(u.email, u.name, code);
     } catch (e) {
-      logger.error({ err: e, username: u.username }, "Failed to send reset code email");
-      res.status(500).json({ error: "We couldn't send your reset email. Please try again later." }); return;
+      logger.error(
+        { err: e, username: u.username },
+        "Failed to send reset code email",
+      );
+      res.status(500).json({
+        error: "We couldn't send your reset email. Please try again later.",
+      });
+      return;
     }
   } else if (process.env["NODE_ENV"] === "production") {
     // In production we must never fall back to exposing the code.
-    logger.error("Password reset requested but email is not configured (RESEND_API_KEY missing)");
-    res.status(500).json({ error: "Password reset is temporarily unavailable. Please contact an administrator." }); return;
+    logger.error(
+      "Password reset requested but email is not configured (RESEND_API_KEY missing)",
+    );
+    res.status(500).json({
+      error:
+        "Password reset is temporarily unavailable. Please contact an administrator.",
+    });
+    return;
   } else {
     // Dev convenience only: surface the code in server logs (never in the HTTP response).
-    logger.warn({ username: u.username, code }, "Email not configured — reset code logged for local dev only");
+    logger.warn(
+      { username: u.username, code },
+      "Email not configured — reset code logged for local dev only",
+    );
   }
 
   res.json(generic);
 });
 
 router.post("/auth/reset-password", async (req, res) => {
-  const { identifier, code, newPassword } = req.body as { identifier?: string; code?: string; newPassword?: string };
+  const { identifier, code, newPassword } = req.body as {
+    identifier?: string;
+    code?: string;
+    newPassword?: string;
+  };
   const idRaw = (identifier || "").trim();
   const c = (code || "").trim();
-  if (!idRaw || !c || !newPassword) { res.status(400).json({ error: "All fields are required" }); return; }
-  if (newPassword.length < 6) { res.status(400).json({ error: "New password must be at least 6 characters" }); return; }
+  if (!idRaw || !c || !newPassword) {
+    res.status(400).json({ error: "All fields are required" });
+    return;
+  }
+  if (newPassword.length < 6) {
+    res
+      .status(400)
+      .json({ error: "New password must be at least 6 characters" });
+    return;
+  }
   const db = getSupabase();
 
   // Resolve the account from a username OR email so the code key (canonical username) is correct.
-  let { data: userRow } = await db.from("school_users").select("id, username, is_active").eq("username", idRaw).limit(1).maybeSingle();
-  if (!userRow) ({ data: userRow } = await db.from("school_users").select("id, username, is_active").eq("email", idRaw).limit(1).maybeSingle());
+  let { data: userRow } = await db
+    .from("school_users")
+    .select("id, username, is_active")
+    .eq("username", idRaw)
+    .limit(1)
+    .maybeSingle();
+  if (!userRow)
+    ({ data: userRow } = await db
+      .from("school_users")
+      .select("id, username, is_active")
+      .eq("email", idRaw)
+      .limit(1)
+      .maybeSingle());
 
-  const genericErr = "Your code is invalid or has expired. Please request a new one.";
-  if (!userRow) { res.status(400).json({ error: genericErr }); return; }
+  const genericErr =
+    "Your code is invalid or has expired. Please request a new one.";
+  if (!userRow) {
+    res.status(400).json({ error: genericErr });
+    return;
+  }
   const usr = userRow as { id: number; username: string; is_active?: boolean };
-  if (usr.is_active === false) { res.status(403).json({ error: "This account has been deactivated. Please contact an administrator." }); return; }
+  if (usr.is_active === false) {
+    res.status(403).json({
+      error:
+        "This account has been deactivated. Please contact an administrator.",
+    });
+    return;
+  }
 
   const key = usr.username.toLowerCase();
   // Verify the code and account for the attempt ATOMICALLY in the DB. A plain
@@ -211,219 +576,352 @@ router.post("/auth/reset-password", async (req, res) => {
   // attacker exceed MAX_RESET_ATTEMPTS. The SQL function locks the row
   // (SELECT ... FOR UPDATE) so concurrent attempts serialize. See
   // supabase/migrations/015_reset_code_atomic_claim.sql.
-  const { data: claimRows, error: claimErr } = await db.rpc("claim_password_reset_attempt", {
-    p_username_key: key,
-    p_code: c,
-    p_max: MAX_RESET_ATTEMPTS,
-  });
-  if (claimErr) { res.status(500).json({ error: "Could not reset your password. Please try again." }); return; }
+  const { data: claimRows, error: claimErr } = await db.rpc(
+    "claim_password_reset_attempt",
+    {
+      p_username_key: key,
+      p_code: c,
+      p_max: MAX_RESET_ATTEMPTS,
+    },
+  );
+  if (claimErr) {
+    res
+      .status(500)
+      .json({ error: "Could not reset your password. Please try again." });
+    return;
+  }
   const claim = (Array.isArray(claimRows) ? claimRows[0] : claimRows) as
-    | { status: string; out_user_id: number | null; out_remaining: number | null }
+    | {
+        status: string;
+        out_user_id: number | null;
+        out_remaining: number | null;
+      }
     | undefined;
-  if (!claim || claim.status === "invalid") { res.status(400).json({ error: genericErr }); return; }
-  if (claim.status === "locked") { res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." }); return; }
+  if (!claim || claim.status === "invalid") {
+    res.status(400).json({ error: genericErr });
+    return;
+  }
+  if (claim.status === "locked") {
+    res.status(429).json({
+      error: "Too many incorrect attempts. Please request a new code.",
+    });
+    return;
+  }
   if (claim.status === "wrong") {
     const remaining = claim.out_remaining ?? 0;
-    res.status(400).json({ error: `Incorrect code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.` }); return;
+    res.status(400).json({
+      error: `Incorrect code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`,
+    });
+    return;
   }
   // status === "ok": the code matched. Update the password, then delete the code.
-  const { error } = await db.from("school_users").update({ password: newPassword }).eq("id", usr.id);
-  if (error) { res.status(500).json({ error: "Could not reset your password. Please try again." }); return; }
+  const { error } = await db
+    .from("school_users")
+    .update({ password: newPassword })
+    .eq("id", usr.id);
+  if (error) {
+    res
+      .status(500)
+      .json({ error: "Could not reset your password. Please try again." });
+    return;
+  }
   await db.from("password_reset_codes").delete().eq("username_key", key);
   res.json({ ok: true });
 });
 
 router.get("/me", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
-  const { data, error } = await db.from("school_users").select("*").eq("id", req.user!.id).single();
-  if (error || !data) { res.status(404).json({ error: "User not found" }); return; }
+  const { data, error } = await db
+    .from("school_users")
+    .select("*")
+    .eq("id", req.user!.id)
+    .single();
+  if (error || !data) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
   res.json(fmtUser(data as DbUser));
 });
 
 /* ─── Users ─────────────────────────────────────────────────── */
 router.get("/users", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
-  const { data, error } = await db.from("school_users").select("*").order("id", { ascending: true });
+  const { data, error } = await db
+    .from("school_users")
+    .select("*")
+    .order("id", { ascending: true });
   if (error) throw error;
   const users = (data ?? []) as DbUser[];
-  res.json(MGMT.has(req.user!.role) ? users.map((u) => fmtUser(u)) : users.filter((u) => u.role === "student").map((u) => fmtUser(u, false)));
+  if (MGMT.has(req.user!.role)) {
+    res.json(users.map((user) => fmtUser(user)));
+    return;
+  }
+  if (req.user!.role === "instructor") {
+    res.json(
+      users
+        .filter((user) => user.role === "student")
+        .map((user) => fmtUser(user, false)),
+    );
+    return;
+  }
+  res.json(
+    users
+      .filter((user) => user.id === req.user!.id)
+      .map((user) => fmtUser(user, false)),
+  );
 });
 
 router.post("/users", requireAuth, requireMgmt, async (req, res) => {
-  const { username, password, name, email, phone, role } = req.body as Record<string, string>;
-  if (!username || !password || !name) { res.status(400).json({ error: "Username, password, and name required" }); return; }
+  const { username, password, name, email, phone, role } = req.body as Record<
+    string,
+    string
+  >;
+  if (!username || !password || !name) {
+    res.status(400).json({ error: "Username, password, and name required" });
+    return;
+  }
+  const accountRole = role || "student";
+  if (!SUPPORTED_ROLES.has(accountRole)) {
+    res.status(400).json({ error: "Unsupported academy role" });
+    return;
+  }
   const db = getSupabase();
-  const { data, error } = await db.from("school_users").insert({ username: username.trim(), password, name, email: email || "", phone: phone || "", role: role || "student" }).select().single();
+  const { data, error } = await db
+    .from("school_users")
+    .insert({
+      username: username.trim(),
+      password,
+      name,
+      email: email || "",
+      phone: phone || "",
+      role: accountRole,
+    })
+    .select()
+    .single();
   if (error) {
-    if (error.code === "23505" || error.message?.includes("unique")) res.status(409).json({ error: "Username already exists" });
+    if (error.code === "23505" || error.message?.includes("unique"))
+      res.status(409).json({ error: "Username already exists" });
     else throw error;
     return;
   }
   res.status(201).json(fmtUser(data as DbUser));
 });
 
-router.patch("/users/:id", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const id = Number(req.params["id"]);
-  const { name, email, phone, role, password } = req.body as Record<string, string>;
-  const upd: Record<string, string> = {};
-  if (name) upd["name"] = name;
-  if (email !== undefined) upd["email"] = email;
-  if (phone !== undefined) upd["phone"] = phone;
-  if (role) upd["role"] = role;
-  if (password) upd["password"] = password;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_users").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  res.json(fmtUser(data as DbUser));
-});
+router.patch(
+  "/users/:id",
+  requireAuth,
+  requireMgmt,
+  async (req: AuthRequest, res) => {
+    const id = Number(req.params["id"]);
+    const { name, email, phone, role, password } = req.body as Record<
+      string,
+      string
+    >;
+    const upd: Record<string, string> = {};
+    if (name) upd["name"] = name;
+    if (email !== undefined) upd["email"] = email;
+    if (phone !== undefined) upd["phone"] = phone;
+    if (role) {
+      if (!SUPPORTED_ROLES.has(role)) {
+        res.status(400).json({ error: "Unsupported academy role" });
+        return;
+      }
+      upd["role"] = role;
+    }
+    if (password) upd["password"] = password;
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("school_users")
+      .update(upd)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(fmtUser(data as DbUser));
+  },
+);
 
-router.delete("/users/:id", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const id = Number(req.params["id"]);
-  if (id === req.user!.id) { res.status(400).json({ error: "Cannot delete your own account" }); return; }
-  const db = getSupabase();
-  const { error } = await db.from("school_users").delete().eq("id", id);
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── Parent Links ───────────────────────────────────────────── */
-router.get("/users/my-children", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const childIds = await getChildIds(db, req.user!.id);
-  if (childIds.length === 0) { res.json([]); return; }
-  const { data, error } = await db.from("school_users").select("*").in("id", childIds.map(Number));
-  if (error) throw error;
-  res.json(((data ?? []) as DbUser[]).map((u) => fmtUser(u, false)));
-});
-
-router.get("/parent-links", requireAuth, requireMgmt, async (_req, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("parent_student_links").select("*").order("created_at", { ascending: false });
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(((data ?? []) as DbParentLink[]).map((l) => ({
-    id: l.id, parentId: l.parent_id, studentId: l.student_id,
-    studentName: um.get(l.student_id) || "", createdAt: l.created_at,
-  })));
-});
-
-router.post("/parent-links", requireAuth, requireMgmt, async (req, res) => {
-  const { parentId, studentId } = req.body as Record<string, string>;
-  if (!parentId || !studentId) { res.status(400).json({ error: "parentId and studentId required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("parent_student_links").insert({ id: genId(), parent_id: parentId, student_id: studentId }).select().single();
-  if (error) {
-    if (error.code === "23505" || error.message?.includes("unique")) res.status(409).json({ error: "Link already exists" });
-    else throw error;
-    return;
-  }
-  res.status(201).json({ id: (data as DbParentLink).id, parentId, studentId, createdAt: (data as DbParentLink).created_at });
-});
-
-router.delete("/parent-links/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("parent_student_links").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
+router.delete(
+  "/users/:id",
+  requireAuth,
+  requireMgmt,
+  async (req: AuthRequest, res) => {
+    const id = Number(req.params["id"]);
+    if (id === req.user!.id) {
+      res.status(400).json({ error: "Cannot delete your own account" });
+      return;
+    }
+    const db = getSupabase();
+    const { error } = await db.from("school_users").delete().eq("id", id);
+    if (error) throw error;
+    res.status(204).send();
+  },
+);
 
 /* ─── Courses ────────────────────────────────────────────────── */
 router.get("/courses", requireAuth, async (_req, res) => {
   const db = getSupabase();
-  const { data, error } = await db.from("school_courses").select("*").order("created_at", { ascending: true });
+  const { data, error } = await db
+    .from("school_courses")
+    .select("*")
+    .order("created_at", { ascending: true });
   if (error) throw error;
   res.json(((data ?? []) as DbCourse[]).map(fmtCourse));
 });
 
 router.post("/courses", requireAuth, requireMgmt, async (req, res) => {
-  const { title, description, instructorId, duration, fee, schedule, status, capacity, category } = req.body as Record<string, string>;
-  if (!title) { res.status(400).json({ error: "Title is required" }); return; }
+  if ("schedule" in req.body || "capacity" in req.body) {
+    res.status(400).json({
+      error: "schedule and capacity are not supported for self-paced courses",
+    });
+    return;
+  }
+  const { title, description, instructorId, duration, fee, status, category } =
+    req.body as Record<string, string>;
+  if (!title) {
+    res.status(400).json({ error: "Title is required" });
+    return;
+  }
   const db = getSupabase();
-  const { data, error } = await db.from("school_courses").insert({ id: genId(), title, description: description || "", instructor_id: instructorId || "", duration: duration || "1 month", fee: fee || "", schedule: schedule || "", students: [], materials: [], status: status || "active", capacity: Number(capacity) || 30, category: category || "" }).select().single();
+  const { data, error } = await db
+    .from("school_courses")
+    .insert({
+      id: genId(),
+      title,
+      description: description || "",
+      instructor_id: instructorId || "",
+      duration: duration || "1 month",
+      fee: fee || "",
+      students: [],
+      materials: [],
+      status: status || "active",
+      category: category || "",
+    })
+    .select()
+    .single();
   if (error) throw error;
   res.status(201).json(fmtCourse(data as DbCourse));
 });
 
 router.patch("/courses/:id", requireAuth, requireMgmt, async (req, res) => {
   const id = String(req.params["id"]);
-  const { title, description, instructorId, duration, fee, schedule, status, capacity, category } = req.body as Record<string, string>;
+  if ("schedule" in req.body || "capacity" in req.body) {
+    res.status(400).json({
+      error: "schedule and capacity are not supported for self-paced courses",
+    });
+    return;
+  }
+  const { title, description, instructorId, duration, fee, status, category } =
+    req.body as Record<string, string>;
   const upd: Record<string, unknown> = {};
   if (title) upd["title"] = title;
   if (description !== undefined) upd["description"] = description;
   if (instructorId !== undefined) upd["instructor_id"] = instructorId;
   if (duration) upd["duration"] = duration;
   if (fee !== undefined) upd["fee"] = fee;
-  if (schedule !== undefined) upd["schedule"] = schedule;
   if (status) upd["status"] = status;
-  if (capacity) upd["capacity"] = Number(capacity);
   if (category !== undefined) upd["category"] = category;
   const db = getSupabase();
-  const { data, error } = await db.from("school_courses").update(upd).eq("id", id).select().single();
+  const { data, error } = await db
+    .from("school_courses")
+    .update(upd)
+    .eq("id", id)
+    .select()
+    .single();
   if (error) throw error;
   res.json(fmtCourse(data as DbCourse));
 });
 
 router.delete("/courses/:id", requireAuth, requireMgmt, async (req, res) => {
   const db = getSupabase();
-  const { error } = await db.from("school_courses").delete().eq("id", String(req.params["id"]));
+  const { error } = await db
+    .from("school_courses")
+    .delete()
+    .eq("id", String(req.params["id"]));
   if (error) throw error;
   res.status(204).send();
 });
 
-// Staff can manage materials for classes they own (instructor) or any class (assistant/mgmt).
-router.patch("/courses/:id/materials", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const id = String(req.params["id"]);
-  if (!(await assertCourseAccess(req, res, id))) return;
-  const { materials } = req.body as { materials: { title: string; url: string }[] };
-  const db = getSupabase();
-  const { data, error } = await db.from("school_courses").update({ materials: Array.isArray(materials) ? materials : [] }).eq("id", id).select().single();
-  if (error) throw error;
-  res.json(fmtCourse(data as DbCourse));
-});
-
-/* ─── Sessions ───────────────────────────────────────────────── */
-router.get("/sessions", requireAuth, async (_req, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_sessions").select("*").order("started_at", { ascending: false });
-  if (error) throw error;
-  res.json(((data ?? []) as DbSession[]).map(fmtSession));
-});
-
-router.post("/sessions", requireAuth, async (req, res) => {
-  const { courseId, courseTitle, instructorId, roomId, title } = req.body as Record<string, string>;
-  const id = genId();
-  const db = getSupabase();
-  const { data, error } = await db.from("school_sessions").insert({ id, course_id: courseId || "", course_title: courseTitle || "", instructor_id: instructorId || "", room_id: roomId || id, title: title || "Live Class", status: "live" }).select().single();
-  if (error) throw error;
-  res.status(201).json(fmtSession(data as DbSession));
-});
-
-router.patch("/sessions/:id/end", requireAuth, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_sessions").update({ status: "ended" }).eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
+// Instructors manage materials for their own courses; administrators may manage any course.
+router.patch(
+  "/courses/:id/materials",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const id = String(req.params["id"]);
+    if (!(await assertCourseAccess(req, res, id))) return;
+    const { materials } = req.body as {
+      materials: { title: string; url: string }[];
+    };
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("school_courses")
+      .update({ materials: Array.isArray(materials) ? materials : [] })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(fmtCourse(data as DbCourse));
+  },
+);
 
 /* ─── Enrollments ────────────────────────────────────────────── */
 router.get("/enrollments", requireAuth, async (req: AuthRequest, res) => {
   const db = getSupabase();
   let q = db.from("school_enrollments").select("*");
-  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
-  if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
+  const role = req.user!.role;
+  const userId = String(req.user!.id);
+  if (role === "student") {
+    q = q.eq("student_id", userId);
+  } else if (role === "instructor") {
+    const { data: courses } = await db
+      .from("school_courses")
+      .select("id")
+      .eq("instructor_id", userId);
+    const courseIds = (courses ?? []).map(
+      (course: { id: string }) => course.id,
+    );
+    if (courseIds.length === 0) {
+      res.json([]);
+      return;
+    }
+    q = q.in("course_id", courseIds);
+  }
+  if (req.query["courseId"])
+    q = q.eq("course_id", String(req.query["courseId"]));
+  if (req.query["studentId"] && role !== "student")
+    q = q.eq("student_id", String(req.query["studentId"]));
   if (req.query["status"]) q = q.eq("status", String(req.query["status"]));
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   const { um, cm } = await getNameMaps(db);
-  res.json(((data ?? []) as DbEnrollment[]).map((e) => fmtEnrollment(e, um, cm)));
+  res.json(
+    ((data ?? []) as DbEnrollment[]).map((e) => fmtEnrollment(e, um, cm)),
+  );
 });
 
 router.post("/enrollments", requireAuth, requireMgmt, async (req, res) => {
-  const { studentId, courseId, fee, notes } = req.body as Record<string, string>;
-  if (!studentId || !courseId) { res.status(400).json({ error: "studentId and courseId required" }); return; }
+  const { studentId, courseId, fee, notes } = req.body as Record<
+    string,
+    string
+  >;
+  if (!studentId || !courseId) {
+    res.status(400).json({ error: "studentId and courseId required" });
+    return;
+  }
   const db = getSupabase();
-  const { data, error } = await db.from("school_enrollments").insert({ id: genId(), student_id: studentId, course_id: courseId, status: "pending", fee: fee || "", notes: notes || "" }).select().single();
+  const { data, error } = await db
+    .from("school_enrollments")
+    .insert({
+      id: genId(),
+      student_id: studentId,
+      course_id: courseId,
+      status: "pending",
+      fee: fee || "",
+      notes: notes || "",
+    })
+    .select()
+    .single();
   if (error) throw error;
   const { um, cm } = await getNameMaps(db);
   res.status(201).json(fmtEnrollment(data as DbEnrollment, um, cm));
@@ -437,70 +935,31 @@ router.patch("/enrollments/:id", requireAuth, requireMgmt, async (req, res) => {
   if (fee !== undefined) upd["fee"] = fee;
   if (notes !== undefined) upd["notes"] = notes;
   const db = getSupabase();
-  const { data, error } = await db.from("school_enrollments").update(upd).eq("id", id).select().single();
+  const { data, error } = await db
+    .from("school_enrollments")
+    .update(upd)
+    .eq("id", id)
+    .select()
+    .single();
   if (error) throw error;
   const { um, cm } = await getNameMaps(db);
   res.json(fmtEnrollment(data as DbEnrollment, um, cm));
 });
 
-router.delete("/enrollments/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_enrollments").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── Announcements ──────────────────────────────────────────── */
-router.get("/announcements", requireAuth, async (_req, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_announcements").select("*").order("created_at", { ascending: false });
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(((data ?? []) as DbAnnouncement[]).map((a) => fmtAnnouncement(a, um)));
-});
-
-router.post("/announcements", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const { title, content, priority, targetRoles, expiresAt } = req.body as { title: string; content: string; priority?: string; targetRoles?: string[]; expiresAt?: string };
-  if (!title || !content) { res.status(400).json({ error: "Title and content required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_announcements").insert({ id: genId(), title, content, author_id: String(req.user!.id), priority: priority || "normal", target_roles: targetRoles || ["all"], expires_at: expiresAt || null }).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.status(201).json(fmtAnnouncement(data as DbAnnouncement, um));
-});
-
-router.delete("/announcements/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_announcements").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── Events ─────────────────────────────────────────────────── */
-router.get("/events", requireAuth, async (_req, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_events").select("*").order("date", { ascending: true });
-  if (error) throw error;
-  res.json(((data ?? []) as DbEvent[]).map(fmtEvent));
-});
-
-router.post("/events", requireAuth, requireMgmt, async (req, res) => {
-  const { title, description, date, location, type } = req.body as Record<string, string>;
-  if (!title || !date) { res.status(400).json({ error: "Title and date required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_events").insert({ id: genId(), title, description: description || "", date, location: location || "", type: type || "academic" }).select().single();
-  if (error) throw error;
-  res.status(201).json(fmtEvent(data as DbEvent));
-});
-
-router.delete("/events/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_events").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
+router.delete(
+  "/enrollments/:id",
+  requireAuth,
+  requireMgmt,
+  async (req, res) => {
+    const db = getSupabase();
+    const { error } = await db
+      .from("school_enrollments")
+      .delete()
+      .eq("id", String(req.params["id"]));
+    if (error) throw error;
+    res.status(204).send();
+  },
+);
 
 /* ─── Payments ───────────────────────────────────────────────── */
 router.get("/payments", requireAuth, async (req: AuthRequest, res) => {
@@ -508,22 +967,10 @@ router.get("/payments", requireAuth, async (req: AuthRequest, res) => {
   const role = req.user!.role;
   const uid = String(req.user!.id);
   let q = db.from("school_payments").select("*");
-  if (STAFF.has(role)) {
-    // Staff/management: optional filter by studentId
-    if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
-  } else if (role === "parent") {
-    // Parent: resolve all linked children from DB first, then verify any requested studentId
-    const allChildIds = await getChildIds(db, uid);
-    let childIds = allChildIds;
-    if (req.query["studentId"]) {
-      const requestedId = String(req.query["studentId"]);
-      if (!allChildIds.includes(requestedId)) { res.status(403).json({ error: "Forbidden" }); return; }
-      childIds = [requestedId];
-    }
-    if (childIds.length === 0) { res.json([]); return; }
-    q = q.in("student_id", childIds);
+  if (MGMT.has(role)) {
+    if (req.query["studentId"])
+      q = q.eq("student_id", String(req.query["studentId"]));
   } else {
-    // Student/alumni and all other roles: always forced to own records only
     q = q.eq("student_id", uid);
   }
   if (req.query["status"]) q = q.eq("status", String(req.query["status"]));
@@ -534,10 +981,38 @@ router.get("/payments", requireAuth, async (req: AuthRequest, res) => {
 });
 
 router.post("/payments", requireAuth, requireMgmt, async (req, res) => {
-  const { studentId, courseId, enrollmentId, amount, method, reference, dueDate, notes } = req.body as Record<string, string>;
-  if (!studentId || !courseId || !amount) { res.status(400).json({ error: "studentId, courseId, and amount required" }); return; }
+  const {
+    studentId,
+    courseId,
+    enrollmentId,
+    amount,
+    method,
+    reference,
+    dueDate,
+    notes,
+  } = req.body as Record<string, string>;
+  if (!studentId || !courseId || !amount) {
+    res.status(400).json({ error: "studentId, courseId, and amount required" });
+    return;
+  }
   const db = getSupabase();
-  const { data, error } = await db.from("school_payments").insert({ id: genId(), student_id: studentId, course_id: courseId, enrollment_id: enrollmentId || "", amount, status: "pending", method: method || "", reference: reference || "", due_date: dueDate || null, paid_at: null, notes: notes || "" }).select().single();
+  const { data, error } = await db
+    .from("school_payments")
+    .insert({
+      id: genId(),
+      student_id: studentId,
+      course_id: courseId,
+      enrollment_id: enrollmentId || "",
+      amount,
+      status: "pending",
+      method: method || "",
+      reference: reference || "",
+      due_date: dueDate || null,
+      paid_at: null,
+      notes: notes || "",
+    })
+    .select()
+    .single();
   if (error) throw error;
   const { um, cm } = await getNameMaps(db);
   res.status(201).json(fmtPayment(data as DbPayment, um, cm));
@@ -545,74 +1020,29 @@ router.post("/payments", requireAuth, requireMgmt, async (req, res) => {
 
 router.patch("/payments/:id", requireAuth, requireMgmt, async (req, res) => {
   const id = String(req.params["id"]);
-  const { status, method, reference, paidAt, notes } = req.body as Record<string, string>;
+  const { status, method, reference, paidAt, notes } = req.body as Record<
+    string,
+    string
+  >;
   const upd: Record<string, string | null> = {};
-  if (status) { upd["status"] = status; if (status === "paid" && !paidAt) upd["paid_at"] = new Date().toISOString(); }
+  if (status) {
+    upd["status"] = status;
+    if (status === "paid" && !paidAt) upd["paid_at"] = new Date().toISOString();
+  }
   if (method !== undefined) upd["method"] = method;
   if (reference !== undefined) upd["reference"] = reference;
   if (paidAt !== undefined) upd["paid_at"] = paidAt || null;
   if (notes !== undefined) upd["notes"] = notes;
   const db = getSupabase();
-  const { data, error } = await db.from("school_payments").update(upd).eq("id", id).select().single();
+  const { data, error } = await db
+    .from("school_payments")
+    .update(upd)
+    .eq("id", id)
+    .select()
+    .single();
   if (error) throw error;
   const { um, cm } = await getNameMaps(db);
   res.json(fmtPayment(data as DbPayment, um, cm));
-});
-
-/* ─── Attendance ─────────────────────────────────────────────── */
-router.get("/attendance", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const role = req.user!.role;
-  const uid = String(req.user!.id);
-  let q = db.from("school_attendance").select("*");
-  if (STAFF.has(role)) {
-    // Staff/management: optional filter by studentId
-    if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
-  } else if (role === "parent") {
-    // Parent: resolve all linked children from DB first, then verify any requested studentId
-    const allChildIds = await getChildIds(db, uid);
-    let childIds = allChildIds;
-    if (req.query["studentId"]) {
-      const requestedId = String(req.query["studentId"]);
-      if (!allChildIds.includes(requestedId)) { res.status(403).json({ error: "Forbidden" }); return; }
-      childIds = [requestedId];
-    }
-    if (childIds.length === 0) { res.json([]); return; }
-    q = q.in("student_id", childIds);
-  } else {
-    // Student/alumni: always forced to own records only
-    q = q.eq("student_id", uid);
-  }
-  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
-  if (req.query["date"]) q = q.eq("session_date", String(req.query["date"]));
-  const { data, error } = await q.order("session_date", { ascending: false });
-  if (error) throw error;
-  const { um, cm } = await getNameMaps(db);
-  res.json(((data ?? []) as DbAttendance[]).map((a) => fmtAttendance(a, um, cm)));
-});
-
-router.post("/attendance", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const { courseId, sessionDate, records } = req.body as { courseId: string; sessionDate: string; records: { studentId: string; status: string; notes?: string }[] };
-  if (!courseId || !sessionDate || !Array.isArray(records)) { res.status(400).json({ error: "courseId, sessionDate, and records required" }); return; }
-  if (!(await assertCourseAccess(req, res, courseId))) return;
-  const db = getSupabase();
-  await db.from("school_attendance").delete().eq("course_id", courseId).eq("session_date", sessionDate);
-  const rows = records.map((r) => ({ id: genId(), student_id: r.studentId, course_id: courseId, session_date: sessionDate, status: r.status || "present", notes: r.notes || "", recorded_by: String(req.user!.id) }));
-  if (rows.length === 0) { res.status(201).json([]); return; }
-  const { data, error } = await db.from("school_attendance").insert(rows).select();
-  if (error) throw error;
-  const { um, cm } = await getNameMaps(db);
-  res.status(201).json(((data ?? []) as DbAttendance[]).map((a) => fmtAttendance(a, um, cm)));
-});
-
-router.delete("/attendance/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const { data: row } = await db.from("school_attendance").select("course_id").eq("id", String(req.params["id"])).maybeSingle();
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  if (!(await assertCourseAccess(req, res, String((row as { course_id: string }).course_id)))) return;
-  const { error } = await db.from("school_attendance").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
 });
 
 /* ─── Grades ─────────────────────────────────────────────────── */
@@ -621,484 +1051,281 @@ router.get("/grades", requireAuth, async (req: AuthRequest, res) => {
   const role = req.user!.role;
   const uid = String(req.user!.id);
   let q = db.from("school_grades").select("*");
-  if (STAFF.has(role)) {
-    // Staff/management: optional filter by studentId
-    if (req.query["studentId"]) q = q.eq("student_id", String(req.query["studentId"]));
-  } else if (role === "parent") {
-    // Parent: resolve all linked children from DB first, then verify any requested studentId
-    const allChildIds = await getChildIds(db, uid);
-    let childIds = allChildIds;
-    if (req.query["studentId"]) {
-      const requestedId = String(req.query["studentId"]);
-      if (!allChildIds.includes(requestedId)) { res.status(403).json({ error: "Forbidden" }); return; }
-      childIds = [requestedId];
-    }
-    if (childIds.length === 0) { res.json([]); return; }
-    q = q.in("student_id", childIds);
-  } else {
-    // Student/alumni: always forced to own records only
+  if (role === "student") {
     q = q.eq("student_id", uid);
+  } else if (role === "instructor") {
+    const { data: courses } = await db
+      .from("school_courses")
+      .select("id")
+      .eq("instructor_id", uid);
+    const courseIds = (courses ?? []).map(
+      (course: { id: string }) => course.id,
+    );
+    if (courseIds.length === 0) {
+      res.json([]);
+      return;
+    }
+    q = q.in("course_id", courseIds);
   }
-  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
+  if (req.query["studentId"] && role !== "student")
+    q = q.eq("student_id", String(req.query["studentId"]));
+  if (req.query["courseId"])
+    q = q.eq("course_id", String(req.query["courseId"]));
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   const { um, cm } = await getNameMaps(db);
-  res.json(((data ?? []) as DbGrade[]).map((g) => fmtGrade(g, um, cm)));
+  res.json(((data ?? []) as DbGrade[]).map((grade) => fmtGrade(grade, um, cm)));
 });
 
-router.post("/grades", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const { studentId, courseId, assessment, score, maxScore, weight, grade, comment } = req.body as Record<string, string>;
-  if (!studentId || !courseId || !assessment) { res.status(400).json({ error: "studentId, courseId, and assessment required" }); return; }
-  if (!(await assertCourseAccess(req, res, courseId))) return;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_grades").insert({ id: genId(), student_id: studentId, course_id: courseId, assessment, score: score || "0", max_score: maxScore || "100", weight: weight || "", grade: grade || "", comment: comment || "", recorded_by: String(req.user!.id) }).select().single();
-  if (error) throw error;
-  const { um, cm } = await getNameMaps(db);
-  res.status(201).json(fmtGrade(data as DbGrade, um, cm));
-});
+router.post(
+  "/grades",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const {
+      studentId,
+      courseId,
+      assessment,
+      score,
+      maxScore,
+      weight,
+      grade,
+      comment,
+    } = req.body as Record<string, string>;
+    if (!studentId || !courseId || !assessment) {
+      res
+        .status(400)
+        .json({ error: "studentId, courseId, and assessment required" });
+      return;
+    }
+    if (!(await assertCourseAccess(req, res, courseId))) return;
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("school_grades")
+      .insert({
+        id: genId(),
+        student_id: studentId,
+        course_id: courseId,
+        assessment,
+        score: score || "0",
+        max_score: maxScore || "100",
+        weight: weight || "",
+        grade: grade || "",
+        comment: comment || "",
+        recorded_by: String(req.user!.id),
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const { um, cm } = await getNameMaps(db);
+    res.status(201).json(fmtGrade(data as DbGrade, um, cm));
+  },
+);
 
-router.patch("/grades/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const id = String(req.params["id"]);
-  const { assessment, score, maxScore, weight, grade, comment } = req.body as Record<string, string>;
-  const upd: Record<string, string> = {};
-  if (assessment) upd["assessment"] = assessment;
-  if (score !== undefined) upd["score"] = score;
-  if (maxScore !== undefined) upd["max_score"] = maxScore;
-  if (weight !== undefined) upd["weight"] = weight;
-  if (grade !== undefined) upd["grade"] = grade;
-  if (comment !== undefined) upd["comment"] = comment;
-  const db = getSupabase();
-  const { data: row } = await db.from("school_grades").select("course_id").eq("id", id).maybeSingle();
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  if (!(await assertCourseAccess(req, res, String((row as { course_id: string }).course_id)))) return;
-  const { data, error } = await db.from("school_grades").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const { um, cm } = await getNameMaps(db);
-  res.json(fmtGrade(data as DbGrade, um, cm));
-});
+router.patch(
+  "/grades/:id",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const id = String(req.params["id"]);
+    const { assessment, score, maxScore, weight, grade, comment } =
+      req.body as Record<string, string>;
+    const upd: Record<string, string> = {};
+    if (assessment) upd["assessment"] = assessment;
+    if (score !== undefined) upd["score"] = score;
+    if (maxScore !== undefined) upd["max_score"] = maxScore;
+    if (weight !== undefined) upd["weight"] = weight;
+    if (grade !== undefined) upd["grade"] = grade;
+    if (comment !== undefined) upd["comment"] = comment;
+    const db = getSupabase();
+    const { data: row } = await db
+      .from("school_grades")
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (
+      !(await assertCourseAccess(
+        req,
+        res,
+        String((row as { course_id: string }).course_id),
+      ))
+    )
+      return;
+    const { data, error } = await db
+      .from("school_grades")
+      .update(upd)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    const { um, cm } = await getNameMaps(db);
+    res.json(fmtGrade(data as DbGrade, um, cm));
+  },
+);
 
-router.delete("/grades/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const { data: row } = await db.from("school_grades").select("course_id").eq("id", String(req.params["id"])).maybeSingle();
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  if (!(await assertCourseAccess(req, res, String((row as { course_id: string }).course_id)))) return;
-  const { error } = await db.from("school_grades").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── HR: Staff Records ──────────────────────────────────────── */
-router.get("/staff", requireAuth, requireMgmt, async (_req, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_staff_records").select("*").order("created_at", { ascending: false });
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(((data ?? []) as DbStaff[]).map((s) => fmtStaff(s, um)));
-});
-
-router.post("/staff", requireAuth, requireMgmt, async (req, res) => {
-  const { userId, position, department, employmentType, hireDate, salary, status, emergencyContact, notes } = req.body as Record<string, string>;
-  if (!userId) { res.status(400).json({ error: "userId required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_staff_records").insert({ id: genId(), user_id: userId, position: position || "", department: department || "", employment_type: employmentType || "full_time", hire_date: hireDate || null, salary: salary || "", status: status || "active", emergency_contact: emergencyContact || "", notes: notes || "" }).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.status(201).json(fmtStaff(data as DbStaff, um));
-});
-
-router.patch("/staff/:id", requireAuth, requireMgmt, async (req, res) => {
-  const id = String(req.params["id"]);
-  const { position, department, employmentType, hireDate, salary, status, emergencyContact, notes } = req.body as Record<string, string>;
-  const upd: Record<string, string | null> = {};
-  if (position !== undefined) upd["position"] = position;
-  if (department !== undefined) upd["department"] = department;
-  if (employmentType) upd["employment_type"] = employmentType;
-  if (hireDate !== undefined) upd["hire_date"] = hireDate || null;
-  if (salary !== undefined) upd["salary"] = salary;
-  if (status) upd["status"] = status;
-  if (emergencyContact !== undefined) upd["emergency_contact"] = emergencyContact;
-  if (notes !== undefined) upd["notes"] = notes;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_staff_records").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(fmtStaff(data as DbStaff, um));
-});
-
-router.delete("/staff/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_staff_records").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── HR: Leave Requests ─────────────────────────────────────── */
-router.get("/leave", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  let q = db.from("school_leave_requests").select("*");
-  if (!MGMT.has(req.user!.role)) q = q.eq("user_id", String(req.user!.id));
-  else if (req.query["userId"]) q = q.eq("user_id", String(req.query["userId"]));
-  const { data, error } = await q.order("created_at", { ascending: false });
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(((data ?? []) as DbLeave[]).map((l) => fmtLeave(l, um)));
-});
-
-router.post("/leave", requireAuth, async (req: AuthRequest, res) => {
-  const { type, startDate, endDate, reason } = req.body as Record<string, string>;
-  if (!startDate || !endDate) { res.status(400).json({ error: "startDate and endDate required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_leave_requests").insert({ id: genId(), user_id: String(req.user!.id), type: type || "annual", start_date: startDate, end_date: endDate, reason: reason || "", status: "pending" }).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.status(201).json(fmtLeave(data as DbLeave, um));
-});
-
-router.patch("/leave/:id", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const id = String(req.params["id"]);
-  const { status, reviewNotes } = req.body as Record<string, string>;
-  const upd: Record<string, string> = {};
-  if (status) upd["status"] = status;
-  if (reviewNotes !== undefined) upd["review_notes"] = reviewNotes;
-  if (status) upd["reviewed_by"] = String(req.user!.id);
-  const db = getSupabase();
-  const { data, error } = await db.from("school_leave_requests").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(fmtLeave(data as DbLeave, um));
-});
-
-/* ─── HR: Payroll ────────────────────────────────────────────── */
-router.get("/payroll", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  let q = db.from("school_payroll").select("*");
-  if (!MGMT.has(req.user!.role)) q = q.eq("user_id", String(req.user!.id));
-  else if (req.query["userId"]) q = q.eq("user_id", String(req.query["userId"]));
-  const { data, error } = await q.order("created_at", { ascending: false });
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(((data ?? []) as DbPayroll[]).map((p) => fmtPayroll(p, um)));
-});
-
-router.post("/payroll", requireAuth, requireMgmt, async (req, res) => {
-  const { userId, period, gross, deductions, net, notes } = req.body as Record<string, string>;
-  if (!userId || !period) { res.status(400).json({ error: "userId and period required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_payroll").insert({ id: genId(), user_id: userId, period, gross: gross || "0", deductions: deductions || "0", net: net || "0", status: "pending", paid_at: null, notes: notes || "" }).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.status(201).json(fmtPayroll(data as DbPayroll, um));
-});
-
-router.patch("/payroll/:id", requireAuth, requireMgmt, async (req, res) => {
-  const id = String(req.params["id"]);
-  const { gross, deductions, net, status, notes } = req.body as Record<string, string>;
-  const upd: Record<string, string | null> = {};
-  if (gross !== undefined) upd["gross"] = gross;
-  if (deductions !== undefined) upd["deductions"] = deductions;
-  if (net !== undefined) upd["net"] = net;
-  if (status) { upd["status"] = status; if (status === "paid") upd["paid_at"] = new Date().toISOString(); }
-  if (notes !== undefined) upd["notes"] = notes;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_payroll").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  res.json(fmtPayroll(data as DbPayroll, um));
-});
+router.delete(
+  "/grades/:id",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const db = getSupabase();
+    const { data: row } = await db
+      .from("school_grades")
+      .select("course_id")
+      .eq("id", String(req.params["id"]))
+      .maybeSingle();
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (
+      !(await assertCourseAccess(
+        req,
+        res,
+        String((row as { course_id: string }).course_id),
+      ))
+    )
+      return;
+    const { error } = await db
+      .from("school_grades")
+      .delete()
+      .eq("id", String(req.params["id"]));
+    if (error) throw error;
+    res.status(204).send();
+  },
+);
 
 /* ─── Reports ────────────────────────────────────────────────── */
 router.get("/reports/overview", requireAuth, requireMgmt, async (_req, res) => {
   const db = getSupabase();
-  const [{ data: users }, { data: courses }, { data: enrollments }, { data: payments }, { data: sessions }, { data: events }, { data: announcements }] = await Promise.all([
-    db.from("school_users").select("id, role"),
+  const [
+    { data: users },
+    { data: courses },
+    { data: enrollments },
+    { data: quizzes },
+    { data: grades },
+    { data: payments },
+  ] = await Promise.all([
+    db.from("school_users").select("id, role, is_active"),
     db.from("school_courses").select("id, status"),
     db.from("school_enrollments").select("id, status"),
+    db.from("school_quizzes").select("id, status"),
+    db.from("school_grades").select("id"),
     db.from("school_payments").select("id, status"),
-    db.from("school_sessions").select("id, status"),
-    db.from("school_events").select("id, date"),
-    db.from("school_announcements").select("id"),
   ]);
-  const u = (users ?? []) as { id: number; role: string }[];
+  const u = (users ?? []) as { id: number; role: string; is_active: boolean }[];
   const c = (courses ?? []) as { id: string; status: string }[];
   const e = (enrollments ?? []) as { id: string; status: string }[];
+  const q = (quizzes ?? []) as { id: string; status: string }[];
+  const g = (grades ?? []) as { id: string }[];
   const p = (payments ?? []) as { id: string; status: string }[];
-  const s = (sessions ?? []) as { id: string; status: string }[];
-  const ev = (events ?? []) as { id: string; date: string }[];
-  const an = (announcements ?? []) as { id: string }[];
-  const mgmtArr = [...MGMT];
-  const now = new Date().toISOString();
+  const activeUsers = u.filter(
+    (user) => user.is_active && SUPPORTED_ROLES.has(user.role),
+  );
   res.json({
-    totalUsers: u.length, totalStudents: u.filter((x) => x.role === "student").length,
-    totalInstructors: u.filter((x) => x.role === "instructor" || x.role === "assistant").length,
-    totalManagement: u.filter((x) => mgmtArr.includes(x.role)).length,
-    totalCourses: c.length, activeCourses: c.filter((x) => x.status === "active").length,
-    totalEnrollments: e.length, activeEnrollments: e.filter((x) => x.status === "active").length,
-    pendingEnrollments: e.filter((x) => x.status === "pending").length,
-    totalPayments: p.length, paidPayments: p.filter((x) => x.status === "paid").length,
-    pendingPayments: p.filter((x) => x.status === "pending" || x.status === "overdue").length,
-    liveSessions: s.filter((x) => x.status === "live").length,
-    upcomingEvents: ev.filter((x) => x.date > now).length,
-    totalAnnouncements: an.length,
+    totalUsers: activeUsers.length,
+    totalStudents: activeUsers.filter((user) => user.role === "student").length,
+    totalInstructors: activeUsers.filter((user) => user.role === "instructor")
+      .length,
+    totalManagement: activeUsers.filter((user) => MGMT.has(user.role)).length,
+    totalCourses: c.length,
+    activeCourses: c.filter((course) => course.status === "active").length,
+    totalEnrollments: e.length,
+    activeEnrollments: e.filter((enrollment) => enrollment.status === "active")
+      .length,
+    pendingEnrollments: e.filter(
+      (enrollment) => enrollment.status === "pending",
+    ).length,
+    totalQuizzes: q.length,
+    publishedQuizzes: q.filter((quiz) => quiz.status === "published").length,
+    totalGrades: g.length,
+    totalPayments: p.length,
+    paidPayments: p.filter((payment) => payment.status === "paid").length,
+    pendingPayments: p.filter(
+      (payment) => payment.status === "pending" || payment.status === "overdue",
+    ).length,
   });
 });
 
-/* ─── Messages ───────────────────────────────────────────────── */
-interface DbMessage { id: string; sender_id: string; recipient_id: string; subject: string; body: string; is_read: boolean; parent_id: string; created_at: string; }
+const buildCourseMap = async (): Promise<
+  Map<string, { title: string; instructorId: string }>
+> => {
+  const { data } = await getSupabase()
+    .from("school_courses")
+    .select("id, title, instructor_id");
+  return new Map<string, { title: string; instructorId: string }>(
+    (data ?? []).map(
+      (course: { id: string; title: string; instructor_id: string }) => [
+        course.id,
+        { title: course.title, instructorId: String(course.instructor_id) },
+      ],
+    ),
+  );
+};
 
 const buildUserMap = async (): Promise<Map<string, string>> => {
-  const db = getSupabase();
-  const { data } = await db.from("school_users").select("id, name");
-  return new Map<string, string>((data ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
+  const { data } = await getSupabase().from("school_users").select("id, name");
+  return new Map<string, string>(
+    (data ?? []).map((user: { id: number; name: string }) => [
+      String(user.id),
+      user.name,
+    ]),
+  );
 };
-
-const fmtMsg = (m: DbMessage, um: Map<string, string>) => ({
-  id: m.id,
-  senderId: m.sender_id,
-  senderName: um.get(m.sender_id) || "Unknown",
-  recipientId: m.recipient_id,
-  recipientName: um.get(m.recipient_id) || "Unknown",
-  subject: m.subject,
-  body: m.body,
-  isRead: m.is_read,
-  parentId: m.parent_id,
-  createdAt: m.created_at,
-});
-
-router.get("/messages/contacts", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_users").select("id, name, role").eq("is_active", true).order("name");
-  if (error) throw error;
-  res.json(data ?? []);
-});
-
-router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const isAdmin = MGMT.has(req.user!.role);
-  const showAll = req.query["all"] === "true" && isAdmin;
-  const uid = String(req.user!.id);
-  const box = String(req.query["box"] || "all");
-
-  let q = db.from("school_messages").select("*");
-  if (!showAll) {
-    if (box === "inbox") q = q.eq("recipient_id", uid);
-    else if (box === "sent") q = q.eq("sender_id", uid);
-    else q = q.or(`sender_id.eq.${uid},recipient_id.eq.${uid}`);
-  }
-  const { data, error } = await q.order("created_at", { ascending: false });
-  if (error) throw error;
-  const um = await buildUserMap();
-  res.json(((data ?? []) as DbMessage[]).map((m) => fmtMsg(m, um)));
-});
-
-router.post("/messages", requireAuth, async (req: AuthRequest, res) => {
-  const { recipientId, subject, body, parentId } = req.body as { recipientId?: string; subject?: string; body?: string; parentId?: string };
-  if (!recipientId || !body) { res.status(400).json({ error: "recipientId and body required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_messages").insert({
-    id: genId(),
-    sender_id: String(req.user!.id),
-    recipient_id: recipientId,
-    subject: subject || "",
-    body,
-    is_read: false,
-    parent_id: parentId || "",
-  }).select().single();
-  if (error) throw error;
-  const um = await buildUserMap();
-  res.status(201).json(fmtMsg(data as DbMessage, um));
-});
-
-router.patch("/messages/:id/read", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const { data: msg } = await db.from("school_messages").select("recipient_id").eq("id", String(req.params["id"])).maybeSingle();
-  if (!msg || String((msg as { recipient_id: string }).recipient_id) !== String(req.user!.id)) {
-    res.status(403).json({ error: "Forbidden" }); return;
-  }
-  const { data, error } = await db.from("school_messages").update({ is_read: true }).eq("id", String(req.params["id"])).select().single();
-  if (error) throw error;
-  const um = await buildUserMap();
-  res.json(fmtMsg(data as DbMessage, um));
-});
-
-router.delete("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const { data: msg } = await db.from("school_messages").select("sender_id, recipient_id").eq("id", String(req.params["id"])).maybeSingle();
-  if (!msg) { res.status(404).json({ error: "Not found" }); return; }
-  const m = msg as { sender_id: string; recipient_id: string };
-  const uid = String(req.user!.id);
-  if (m.sender_id !== uid && m.recipient_id !== uid) {
-    res.status(403).json({ error: "Forbidden" }); return;
-  }
-  const { error } = await db.from("school_messages").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── Timetable ──────────────────────────────────────────────── */
-interface DbTimetable { id: string; course_id: string; day_of_week: string; period: string; room: string; start_time: string; end_time: string; created_at: string; }
-
-const buildCourseMap = async (): Promise<Map<string, { title: string; instructorId: string }>> => {
-  const db = getSupabase();
-  const { data } = await db.from("school_courses").select("id, title, instructor_id");
-  return new Map<string, { title: string; instructorId: string }>((data ?? []).map((c: { id: string; title: string; instructor_id: string }) => [c.id, { title: c.title, instructorId: String(c.instructor_id) }]));
-};
-
-const fmtSlot = (s: DbTimetable, cm: Map<string, { title: string; instructorId: string }>, um: Map<string, string>) => {
-  const instructorId = cm.get(s.course_id)?.instructorId || "";
-  return {
-    id: s.id, courseId: s.course_id,
-    courseTitle: cm.get(s.course_id)?.title || "",
-    instructorId,
-    instructorName: um.get(instructorId) || "",
-    dayOfWeek: s.day_of_week, period: s.period, room: s.room,
-    startTime: s.start_time, endTime: s.end_time, createdAt: s.created_at,
-  };
-};
-
-const getScheduleCourseIds = async (role: string, uid: string): Promise<string[] | null> => {
-  if (MGMT.has(role)) return null;
-  const db = getSupabase();
-  if (role === "instructor" || role === "assistant") {
-    const { data } = await db.from("school_courses").select("id").eq("instructor_id", uid);
-    return (data ?? []).map((c: { id: string }) => c.id);
-  }
-  const { data } = await db.from("school_enrollments").select("course_id").eq("student_id", uid).neq("status", "withdrawn");
-  return (data ?? []).map((e: { course_id: string }) => e.course_id);
-};
-
-router.get("/timetable", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const allowedCourseIds = await getScheduleCourseIds(req.user!.role, String(req.user!.id));
-  if (allowedCourseIds !== null && allowedCourseIds.length === 0) { res.json([]); return; }
-  let q = db.from("school_timetable").select("*");
-  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
-  if (allowedCourseIds !== null) q = q.in("course_id", allowedCourseIds);
-  const { data, error } = await q.order("created_at", { ascending: true });
-  if (error) throw error;
-  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
-  res.json(((data ?? []) as DbTimetable[]).map((s) => fmtSlot(s, cm, um)));
-});
-
-router.post("/timetable", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const { courseId, dayOfWeek, period, room, startTime, endTime } = req.body as Record<string, string>;
-  if (!courseId || !dayOfWeek) { res.status(400).json({ error: "courseId and dayOfWeek required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_timetable").insert({ id: genId(), course_id: courseId, day_of_week: dayOfWeek, period: period || "", room: room || "", start_time: startTime || "", end_time: endTime || "" }).select().single();
-  if (error) throw error;
-  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
-  res.status(201).json(fmtSlot(data as DbTimetable, cm, um));
-});
-
-router.patch("/timetable/:id", requireAuth, requireMgmt, async (req, res) => {
-  const id = String(req.params["id"]);
-  const { courseId, dayOfWeek, period, room, startTime, endTime } = req.body as Record<string, string>;
-  const upd: Record<string, string> = {};
-  if (courseId) upd["course_id"] = courseId;
-  if (dayOfWeek) upd["day_of_week"] = dayOfWeek;
-  if (period !== undefined) upd["period"] = period;
-  if (room !== undefined) upd["room"] = room;
-  if (startTime !== undefined) upd["start_time"] = startTime;
-  if (endTime !== undefined) upd["end_time"] = endTime;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_timetable").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
-  res.json(fmtSlot(data as DbTimetable, cm, um));
-});
-
-router.delete("/timetable/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_timetable").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── Exams ──────────────────────────────────────────────────── */
-interface DbExam { id: string; course_id: string; title: string; exam_date: string; start_time: string; end_time: string; room: string; invigilator_id: string; notes: string; created_at: string; }
-
-const fmtExam = (e: DbExam, cm: Map<string, { title: string; instructorId: string }>, um: Map<string, string>) => ({
-  id: e.id, courseId: e.course_id,
-  courseTitle: cm.get(e.course_id)?.title || "",
-  title: e.title, examDate: e.exam_date,
-  startTime: e.start_time, endTime: e.end_time, room: e.room,
-  invigilatorId: e.invigilator_id,
-  invigilatorName: um.get(e.invigilator_id) || "",
-  notes: e.notes, createdAt: e.created_at,
-});
-
-router.get("/exams", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const allowedCourseIds = await getScheduleCourseIds(req.user!.role, String(req.user!.id));
-  if (allowedCourseIds !== null && allowedCourseIds.length === 0) { res.json([]); return; }
-  let q = db.from("school_exams").select("*");
-  if (req.query["courseId"]) q = q.eq("course_id", String(req.query["courseId"]));
-  if (allowedCourseIds !== null) q = q.in("course_id", allowedCourseIds);
-  const { data, error } = await q.order("exam_date", { ascending: true });
-  if (error) throw error;
-  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
-  res.json(((data ?? []) as DbExam[]).map((e) => fmtExam(e, cm, um)));
-});
-
-router.post("/exams", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
-  const { courseId, title, examDate, startTime, endTime, room, invigilatorId, notes } = req.body as Record<string, string>;
-  if (!courseId || !title || !examDate) { res.status(400).json({ error: "courseId, title and examDate required" }); return; }
-  const db = getSupabase();
-  const { data, error } = await db.from("school_exams").insert({ id: genId(), course_id: courseId, title, exam_date: examDate, start_time: startTime || "", end_time: endTime || "", room: room || "", invigilator_id: invigilatorId || "", notes: notes || "" }).select().single();
-  if (error) throw error;
-  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
-  res.status(201).json(fmtExam(data as DbExam, cm, um));
-});
-
-router.patch("/exams/:id", requireAuth, requireMgmt, async (req, res) => {
-  const id = String(req.params["id"]);
-  const { courseId, title, examDate, startTime, endTime, room, invigilatorId, notes } = req.body as Record<string, string>;
-  const upd: Record<string, string> = {};
-  if (courseId) upd["course_id"] = courseId;
-  if (title) upd["title"] = title;
-  if (examDate) upd["exam_date"] = examDate;
-  if (startTime !== undefined) upd["start_time"] = startTime;
-  if (endTime !== undefined) upd["end_time"] = endTime;
-  if (room !== undefined) upd["room"] = room;
-  if (invigilatorId !== undefined) upd["invigilator_id"] = invigilatorId;
-  if (notes !== undefined) upd["notes"] = notes;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_exams").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const [cm, um] = await Promise.all([buildCourseMap(), buildUserMap()]);
-  res.json(fmtExam(data as DbExam, cm, um));
-});
-
-router.delete("/exams/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_exams").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
 
 /* ─── Quizzes ────────────────────────────────────────────────── */
-interface DbQuestion { id: string; type: string; text: string; options?: string[]; correct?: string; }
-interface DbQuiz { id: string; course_id: string; title: string; instructions: string; due_date: string | null; time_limit_mins: number; status: string; questions: DbQuestion[]; created_by: string; created_at: string; }
-interface DbQuizSubmission { id: string; quiz_id: string; student_id: string; answers: Record<string, string>; score: number; max_score: number; submitted_at: string; created_at: string; }
+interface DbQuestion {
+  id: string;
+  type: string;
+  text: string;
+  options?: string[];
+  correct?: string;
+}
+interface DbQuiz {
+  id: string;
+  course_id: string;
+  title: string;
+  instructions: string;
+  due_date: string | null;
+  time_limit_mins: number;
+  status: string;
+  questions: DbQuestion[];
+  created_by: string;
+  created_at: string;
+}
+interface DbQuizSubmission {
+  id: string;
+  quiz_id: string;
+  student_id: string;
+  answers: Record<string, string>;
+  score: number;
+  max_score: number;
+  submitted_at: string;
+  created_at: string;
+}
 
-const fmtQuiz = (q: DbQuiz, cm: Map<string, { title: string; instructorId: string }>, stripAnswers = false) => ({
-  id: q.id, courseId: q.course_id,
+const fmtQuiz = (
+  q: DbQuiz,
+  cm: Map<string, { title: string; instructorId: string }>,
+  stripAnswers = false,
+) => ({
+  id: q.id,
+  courseId: q.course_id,
   courseTitle: cm.get(q.course_id)?.title || "",
-  title: q.title, instructions: q.instructions,
-  dueDate: q.due_date, timeLimitMins: q.time_limit_mins,
+  title: q.title,
+  instructions: q.instructions,
+  dueDate: q.due_date,
+  timeLimitMins: q.time_limit_mins,
   status: q.status,
   questions: stripAnswers
     ? q.questions.map(({ correct: _c, ...rest }) => rest)
     : q.questions,
-  createdBy: q.created_by, createdAt: q.created_at,
+  createdBy: q.created_by,
+  createdAt: q.created_at,
 });
 
 router.get("/quizzes", requireAuth, async (req: AuthRequest, res) => {
@@ -1106,422 +1333,479 @@ router.get("/quizzes", requireAuth, async (req: AuthRequest, res) => {
   const role = req.user!.role;
   const uid = String(req.user!.id);
   let q = db.from("school_quizzes").select("*");
-  if (!MGMT.has(role) && role !== "assistant") {
+  if (!MGMT.has(role)) {
     if (role === "instructor") {
-      const { data: courses } = await db.from("school_courses").select("id").eq("instructor_id", uid);
+      const { data: courses } = await db
+        .from("school_courses")
+        .select("id")
+        .eq("instructor_id", uid);
       const ids = (courses ?? []).map((c: { id: string }) => c.id);
-      if (ids.length === 0) { res.json([]); return; }
+      if (ids.length === 0) {
+        res.json([]);
+        return;
+      }
       q = q.in("course_id", ids);
     } else {
-      const { data: enrollments } = await db.from("school_enrollments").select("course_id").eq("student_id", uid).neq("status", "withdrawn");
-      const ids = (enrollments ?? []).map((e: { course_id: string }) => e.course_id);
-      if (ids.length === 0) { res.json([]); return; }
+      const { data: enrollments } = await db
+        .from("school_enrollments")
+        .select("course_id")
+        .eq("student_id", uid)
+        .neq("status", "withdrawn");
+      const ids = (enrollments ?? []).map(
+        (e: { course_id: string }) => e.course_id,
+      );
+      if (ids.length === 0) {
+        res.json([]);
+        return;
+      }
       q = q.in("course_id", ids).eq("status", "published");
     }
   }
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   const cm = await buildCourseMap();
-  const isStudent = !MGMT.has(role) && role !== "instructor" && role !== "assistant";
+  const isStudent = role === "student";
 
-  res.json(((data ?? []) as DbQuiz[]).map((quiz) => fmtQuiz(quiz, cm, isStudent)));
+  res.json(
+    ((data ?? []) as DbQuiz[]).map((quiz) => fmtQuiz(quiz, cm, isStudent)),
+  );
 });
 
-router.post("/quizzes", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const { courseId, title, instructions, dueDate, timeLimitMins, status, questions } = req.body as Record<string, unknown>;
-  if (!courseId || !title) { res.status(400).json({ error: "courseId and title required" }); return; }
-  if (!await assertCourseAccess(req, res, String(courseId))) return;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_quizzes").insert({
-    id: genId(), course_id: String(courseId), title: String(title),
-    instructions: String(instructions || ""),
-    due_date: dueDate || null,
-    time_limit_mins: Number(timeLimitMins) || 0,
-    status: String(status || "draft"),
-    questions: questions || [],
-    created_by: String(req.user!.id),
-  }).select().single();
-  if (error) throw error;
-  const cm = await buildCourseMap();
-  res.status(201).json(fmtQuiz(data as DbQuiz, cm));
-});
-
-router.patch("/quizzes/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const id = String(req.params["id"]);
-  const db = getSupabase();
-  const { data: existing, error: fetchErr } = await db.from("school_quizzes").select("course_id").eq("id", id).maybeSingle();
-  if (fetchErr) throw fetchErr;
-  if (!existing) { res.status(404).json({ error: "Quiz not found" }); return; }
-  if (!await assertCourseAccess(req, res, (existing as { course_id: string }).course_id)) return;
-  const { title, instructions, dueDate, timeLimitMins, status, questions } = req.body as Record<string, unknown>;
-  const upd: Record<string, unknown> = {};
-  if (title !== undefined) upd["title"] = title;
-  if (instructions !== undefined) upd["instructions"] = instructions;
-  if (dueDate !== undefined) upd["due_date"] = dueDate || null;
-  if (timeLimitMins !== undefined) upd["time_limit_mins"] = Number(timeLimitMins);
-  if (status !== undefined) upd["status"] = status;
-  if (questions !== undefined) upd["questions"] = questions;
-  const { data, error } = await db.from("school_quizzes").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const cm = await buildCourseMap();
-  res.json(fmtQuiz(data as DbQuiz, cm));
-});
-
-router.delete("/quizzes/:id", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const id = String(req.params["id"]);
-  const db = getSupabase();
-  const { data: existing, error: fetchErr } = await db.from("school_quizzes").select("course_id").eq("id", id).maybeSingle();
-  if (fetchErr) throw fetchErr;
-  if (!existing) { res.status(404).json({ error: "Quiz not found" }); return; }
-  if (!await assertCourseAccess(req, res, (existing as { course_id: string }).course_id)) return;
-  const { error } = await db.from("school_quizzes").delete().eq("id", id);
-  if (error) throw error;
-  res.status(204).send();
-});
-
-router.post("/quizzes/:id/submit", requireAuth, async (req: AuthRequest, res) => {
-  const quizId = String(req.params["id"]);
-  const uid = String(req.user!.id);
-  const role = req.user!.role;
-  const answers = (req.body.answers || {}) as Record<string, string>;
-  const db = getSupabase();
-  const { data: quizData, error: qErr } = await db.from("school_quizzes").select("*").eq("id", quizId).maybeSingle();
-  if (qErr) throw qErr;
-  if (!quizData) { res.status(404).json({ error: "Quiz not found" }); return; }
-  const quiz = quizData as DbQuiz;
-  if (quiz.status !== "published") { res.status(403).json({ error: "Quiz is not published" }); return; }
-  const isLearner = !MGMT.has(role) && role !== "instructor" && role !== "assistant";
-  if (isLearner) {
-    const { data: enr } = await db.from("school_enrollments").select("id").eq("student_id", uid).eq("course_id", quiz.course_id).neq("status", "withdrawn").limit(1).maybeSingle();
-    if (!enr) { res.status(403).json({ error: "Not enrolled in this course" }); return; }
-  }
-  let score = 0, maxScore = 0;
-  for (const q of quiz.questions) {
-    if (q.type === "mcq" || q.type === "true_false") {
-      maxScore++;
-      if (q.correct && answers[q.id] === q.correct) score++;
+router.post(
+  "/quizzes",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const {
+      courseId,
+      title,
+      instructions,
+      dueDate,
+      timeLimitMins,
+      status,
+      questions,
+    } = req.body as Record<string, unknown>;
+    if (!courseId || !title) {
+      res.status(400).json({ error: "courseId and title required" });
+      return;
     }
-  }
-  const { data: sub, error: sErr } = await db.from("school_quiz_submissions").insert({
-    id: genId(), quiz_id: quizId, student_id: uid,
-    answers, score, max_score: maxScore,
-    submitted_at: new Date().toISOString(),
-  }).select().single();
-  if (sErr) throw sErr;
-  if (isLearner && maxScore > 0) {
-    try {
-      await db.from("school_grades").insert({
-        id: genId(), student_id: uid, course_id: quiz.course_id,
-        assessment: quiz.title, score: String(score), max_score: String(maxScore),
-        weight: "", grade: "", comment: "Auto-graded quiz", recorded_by: "system",
-      });
-    } catch { }
-  }
-  const s = sub as DbQuizSubmission;
-  res.status(201).json({
-    id: s.id, quizId: s.quiz_id, studentId: s.student_id,
-    answers: s.answers, score, maxScore,
-    submittedAt: s.submitted_at, createdAt: s.created_at,
-  });
-});
+    if (!(await assertCourseAccess(req, res, String(courseId)))) return;
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("school_quizzes")
+      .insert({
+        id: genId(),
+        course_id: String(courseId),
+        title: String(title),
+        instructions: String(instructions || ""),
+        due_date: dueDate || null,
+        time_limit_mins: Number(timeLimitMins) || 0,
+        status: String(status || "draft"),
+        questions: questions || [],
+        created_by: String(req.user!.id),
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const cm = await buildCourseMap();
+    res.status(201).json(fmtQuiz(data as DbQuiz, cm));
+  },
+);
 
-router.get("/quizzes/:id/submissions", requireAuth, requireStaff, async (req: AuthRequest, res) => {
-  const id = String(req.params["id"]);
-  const db = getSupabase();
-  const { data: existing, error: fetchErr } = await db.from("school_quizzes").select("course_id").eq("id", id).maybeSingle();
-  if (fetchErr) throw fetchErr;
-  if (!existing) { res.status(404).json({ error: "Quiz not found" }); return; }
-  if (!await assertCourseAccess(req, res, (existing as { course_id: string }).course_id)) return;
-  const { data, error } = await db.from("school_quiz_submissions").select("*").eq("quiz_id", id).order("submitted_at", { ascending: false });
-  if (error) throw error;
-  const um = await buildUserMap();
-  res.json(((data ?? []) as DbQuizSubmission[]).map((s) => ({
-    id: s.id, quizId: s.quiz_id, studentId: s.student_id,
-    studentName: um.get(s.student_id) || "",
-    answers: s.answers, score: s.score, maxScore: s.max_score,
-    submittedAt: s.submitted_at, createdAt: s.created_at,
-  })));
-});
-
-router.get("/quizzes/:id/my-submission", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_quiz_submissions").select("*")
-    .eq("quiz_id", String(req.params["id"])).eq("student_id", String(req.user!.id))
-    .order("submitted_at", { ascending: false }).limit(1).maybeSingle();
-  if (error) throw error;
-  if (!data) { res.json(null); return; }
-  const s = data as DbQuizSubmission;
-  res.json({
-    id: s.id, quizId: s.quiz_id, studentId: s.student_id,
-    answers: s.answers, score: s.score, maxScore: s.max_score,
-    submittedAt: s.submitted_at, createdAt: s.created_at,
-  });
-});
-
-/* ─── Library: Books ─────────────────────────────────────────── */
-interface DbBook { id: string; title: string; author: string; isbn: string; category: string; total_copies: number; available_copies: number; description: string; created_at: string; }
-interface DbBorrow { id: string; book_id: string; user_id: string; borrowed_date: string; due_date: string; returned_date: string | null; fine_amount: string; status: string; created_at: string; }
-
-const fmtBook = (b: DbBook) => ({ id: b.id, title: b.title, author: b.author, isbn: b.isbn, category: b.category, totalCopies: b.total_copies, availableCopies: b.available_copies, description: b.description, createdAt: b.created_at });
-const fmtBorrow = (b: DbBorrow, um: Map<string, string>, bm: Map<string, string>) => ({ id: b.id, bookId: b.book_id, bookTitle: bm.get(b.book_id) || b.book_id, userId: b.user_id, userName: um.get(b.user_id) || b.user_id, borrowedDate: b.borrowed_date, dueDate: b.due_date, returnedDate: b.returned_date, fineAmount: b.fine_amount, status: b.status, createdAt: b.created_at });
-
-async function buildBookMap(db: ReturnType<typeof getSupabase>): Promise<Map<string, string>> {
-  const { data } = await db.from("school_books").select("id, title");
-  return new Map((data ?? []).map((b: { id: string; title: string }) => [b.id, b.title]));
-}
-
-router.get("/books", requireAuth, async (_req, res) => {
-  const db = getSupabase();
-  const { data, error } = await db.from("school_books").select("*").order("title", { ascending: true });
-  if (error) throw error;
-  res.json(((data ?? []) as DbBook[]).map(fmtBook));
-});
-
-router.post("/books", requireAuth, requireMgmt, async (req, res) => {
-  const { title, author, isbn, category, totalCopies, description } = req.body as Record<string, string>;
-  if (!title) { res.status(400).json({ error: "title required" }); return; }
-  const copies = Number(totalCopies) || 1;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_books").insert({ id: genId(), title, author: author || "", isbn: isbn || "", category: category || "", total_copies: copies, available_copies: copies, description: description || "" }).select().single();
-  if (error) throw error;
-  res.status(201).json(fmtBook(data as DbBook));
-});
-
-router.patch("/books/:id", requireAuth, requireMgmt, async (req, res) => {
-  const id = String(req.params["id"]);
-  const { title, author, isbn, category, totalCopies, availableCopies, description } = req.body as Record<string, string>;
-  const upd: Record<string, string | number> = {};
-  if (title) upd["title"] = title;
-  if (author !== undefined) upd["author"] = author;
-  if (isbn !== undefined) upd["isbn"] = isbn;
-  if (category !== undefined) upd["category"] = category;
-  if (totalCopies !== undefined) upd["total_copies"] = Number(totalCopies);
-  if (availableCopies !== undefined) upd["available_copies"] = Number(availableCopies);
-  if (description !== undefined) upd["description"] = description;
-  const db = getSupabase();
-  const { data, error } = await db.from("school_books").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  res.json(fmtBook(data as DbBook));
-});
-
-router.delete("/books/:id", requireAuth, requireMgmt, async (req, res) => {
-  const db = getSupabase();
-  const { error } = await db.from("school_books").delete().eq("id", String(req.params["id"]));
-  if (error) throw error;
-  res.status(204).send();
-});
-
-/* ─── Library: Borrows ───────────────────────────────────────── */
-router.get("/borrows", requireAuth, async (req: AuthRequest, res) => {
-  const db = getSupabase();
-  const role = req.user!.role;
-  const uid = String(req.user!.id);
-  let q = db.from("school_borrows").select("*");
-  if (!STAFF.has(role) && role !== "parent") q = q.eq("user_id", uid);
-  else {
-    if (req.query["userId"]) q = q.eq("user_id", String(req.query["userId"]));
-  }
-  if (req.query["bookId"]) q = q.eq("book_id", String(req.query["bookId"]));
-  if (req.query["status"]) q = q.eq("status", String(req.query["status"]));
-  const { data, error } = await q.order("borrowed_date", { ascending: false });
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  const bm = await buildBookMap(db);
-  res.json(((data ?? []) as DbBorrow[]).map((b) => fmtBorrow(b, um, bm)));
-});
-
-router.post("/borrows", requireAuth, async (req: AuthRequest, res) => {
-  const { bookId, userId, dueDate } = req.body as Record<string, string>;
-  if (!bookId || !dueDate) { res.status(400).json({ error: "bookId and dueDate required" }); return; }
-  const db = getSupabase();
-  const { data: book, error: be } = await db.from("school_books").select("available_copies").eq("id", bookId).maybeSingle();
-  if (be) throw be;
-  if (!book) { res.status(404).json({ error: "Book not found" }); return; }
-  if ((book as { available_copies: number }).available_copies < 1) { res.status(409).json({ error: "No copies available" }); return; }
-  const borrowUserId = STAFF.has(req.user!.role) && userId ? userId : String(req.user!.id);
-  await db.from("school_books").update({ available_copies: (book as { available_copies: number }).available_copies - 1 }).eq("id", bookId);
-  const { data, error } = await db.from("school_borrows").insert({ id: genId(), book_id: bookId, user_id: borrowUserId, due_date: dueDate, status: "borrowed", fine_amount: "0" }).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  const bm = await buildBookMap(db);
-  res.status(201).json(fmtBorrow(data as DbBorrow, um, bm));
-});
-
-router.patch("/borrows/:id", requireAuth, requireStaff, async (req, res) => {
-  const id = String(req.params["id"]);
-  const { status, fineAmount, returnedDate } = req.body as Record<string, string>;
-  const db = getSupabase();
-  const { data: existing } = await db.from("school_borrows").select("*").eq("id", id).maybeSingle();
-  if (!existing) { res.status(404).json({ error: "Borrow record not found" }); return; }
-  const borrow = existing as DbBorrow;
-  const upd: Record<string, string | null> = {};
-  if (status) upd["status"] = status;
-  if (fineAmount !== undefined) upd["fine_amount"] = fineAmount;
-  if (returnedDate !== undefined) upd["returned_date"] = returnedDate || null;
-  if (status === "returned" && !borrow.returned_date) {
-    upd["returned_date"] = returnedDate || new Date().toISOString();
-    if (!borrow.returned_date) {
-      const { data: book } = await db.from("school_books").select("available_copies").eq("id", borrow.book_id).maybeSingle();
-      if (book) await db.from("school_books").update({ available_copies: (book as { available_copies: number }).available_copies + 1 }).eq("id", borrow.book_id);
+router.patch(
+  "/quizzes/:id",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const id = String(req.params["id"]);
+    const db = getSupabase();
+    const { data: existing, error: fetchErr } = await db
+      .from("school_quizzes")
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
     }
-  }
-  const { data, error } = await db.from("school_borrows").update(upd).eq("id", id).select().single();
-  if (error) throw error;
-  const { data: users } = await db.from("school_users").select("id, name");
-  const um = new Map<string, string>((users ?? []).map((u: { id: number; name: string }) => [String(u.id), u.name]));
-  const bm = await buildBookMap(db);
-  res.json(fmtBorrow(data as DbBorrow, um, bm));
-});
+    if (
+      !(await assertCourseAccess(
+        req,
+        res,
+        (existing as { course_id: string }).course_id,
+      ))
+    )
+      return;
+    const { title, instructions, dueDate, timeLimitMins, status, questions } =
+      req.body as Record<string, unknown>;
+    const upd: Record<string, unknown> = {};
+    if (title !== undefined) upd["title"] = title;
+    if (instructions !== undefined) upd["instructions"] = instructions;
+    if (dueDate !== undefined) upd["due_date"] = dueDate || null;
+    if (timeLimitMins !== undefined)
+      upd["time_limit_mins"] = Number(timeLimitMins);
+    if (status !== undefined) upd["status"] = status;
+    if (questions !== undefined) upd["questions"] = questions;
+    const { data, error } = await db
+      .from("school_quizzes")
+      .update(upd)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    const cm = await buildCourseMap();
+    res.json(fmtQuiz(data as DbQuiz, cm));
+  },
+);
 
-router.delete("/borrows/:id", requireAuth, requireMgmt, async (req, res) => {
-  const id = String(req.params["id"]);
-  const db = getSupabase();
-  const { data: existing } = await db.from("school_borrows").select("*").eq("id", id).maybeSingle();
-  if (existing) {
-    const borrow = existing as DbBorrow;
-    if (borrow.status === "borrowed") {
-      const { data: book } = await db.from("school_books").select("available_copies").eq("id", borrow.book_id).maybeSingle();
-      if (book) await db.from("school_books").update({ available_copies: (book as { available_copies: number }).available_copies + 1 }).eq("id", borrow.book_id);
+router.delete(
+  "/quizzes/:id",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const id = String(req.params["id"]);
+    const db = getSupabase();
+    const { data: existing, error: fetchErr } = await db
+      .from("school_quizzes")
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
     }
-  }
-  const { error } = await db.from("school_borrows").delete().eq("id", id);
-  if (error) throw error;
-  res.status(204).send();
-});
+    if (
+      !(await assertCourseAccess(
+        req,
+        res,
+        (existing as { course_id: string }).course_id,
+      ))
+    )
+      return;
+    const { error } = await db.from("school_quizzes").delete().eq("id", id);
+    if (error) throw error;
+    res.status(204).send();
+  },
+);
+
+router.post(
+  "/quizzes/:id/submit",
+  requireAuth,
+  async (req: AuthRequest, res) => {
+    const quizId = String(req.params["id"]);
+    const uid = String(req.user!.id);
+    const role = req.user!.role;
+    const answers = (req.body.answers || {}) as Record<string, string>;
+    const db = getSupabase();
+    const { data: quizData, error: qErr } = await db
+      .from("school_quizzes")
+      .select("*")
+      .eq("id", quizId)
+      .maybeSingle();
+    if (qErr) throw qErr;
+    if (!quizData) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
+    }
+    const quiz = quizData as DbQuiz;
+    if (quiz.status !== "published") {
+      res.status(403).json({ error: "Quiz is not published" });
+      return;
+    }
+    if (role !== "student") {
+      res.status(403).json({ error: "Only students can submit quizzes" });
+      return;
+    }
+    const { data: enr } = await db
+      .from("school_enrollments")
+      .select("id")
+      .eq("student_id", uid)
+      .eq("course_id", quiz.course_id)
+      .neq("status", "withdrawn")
+      .limit(1)
+      .maybeSingle();
+    if (!enr) {
+      res.status(403).json({ error: "Not enrolled in this course" });
+      return;
+    }
+    let score = 0,
+      maxScore = 0;
+    for (const q of quiz.questions) {
+      if (q.type === "mcq" || q.type === "true_false") {
+        maxScore++;
+        if (q.correct && answers[q.id] === q.correct) score++;
+      }
+    }
+    const { data: sub, error: sErr } = await db
+      .from("school_quiz_submissions")
+      .insert({
+        id: genId(),
+        quiz_id: quizId,
+        student_id: uid,
+        answers,
+        score,
+        max_score: maxScore,
+        submitted_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (sErr) throw sErr;
+    if (maxScore > 0) {
+      try {
+        await db.from("school_grades").insert({
+          id: genId(),
+          student_id: uid,
+          course_id: quiz.course_id,
+          assessment: quiz.title,
+          score: String(score),
+          max_score: String(maxScore),
+          weight: "",
+          grade: "",
+          comment: "Auto-graded quiz",
+          recorded_by: "system",
+        });
+      } catch {}
+    }
+    const s = sub as DbQuizSubmission;
+    res.status(201).json({
+      id: s.id,
+      quizId: s.quiz_id,
+      studentId: s.student_id,
+      answers: s.answers,
+      score,
+      maxScore,
+      submittedAt: s.submitted_at,
+      createdAt: s.created_at,
+    });
+  },
+);
+
+router.get(
+  "/quizzes/:id/submissions",
+  requireAuth,
+  requireStaff,
+  async (req: AuthRequest, res) => {
+    const id = String(req.params["id"]);
+    const db = getSupabase();
+    const { data: existing, error: fetchErr } = await db
+      .from("school_quizzes")
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) {
+      res.status(404).json({ error: "Quiz not found" });
+      return;
+    }
+    if (
+      !(await assertCourseAccess(
+        req,
+        res,
+        (existing as { course_id: string }).course_id,
+      ))
+    )
+      return;
+    const { data, error } = await db
+      .from("school_quiz_submissions")
+      .select("*")
+      .eq("quiz_id", id)
+      .order("submitted_at", { ascending: false });
+    if (error) throw error;
+    const um = await buildUserMap();
+    res.json(
+      ((data ?? []) as DbQuizSubmission[]).map((s) => ({
+        id: s.id,
+        quizId: s.quiz_id,
+        studentId: s.student_id,
+        studentName: um.get(s.student_id) || "",
+        answers: s.answers,
+        score: s.score,
+        maxScore: s.max_score,
+        submittedAt: s.submitted_at,
+        createdAt: s.created_at,
+      })),
+    );
+  },
+);
+
+router.get(
+  "/quizzes/:id/my-submission",
+  requireAuth,
+  async (req: AuthRequest, res) => {
+    if (req.user!.role !== "student") {
+      res.status(403).json({ error: "Student access required" });
+      return;
+    }
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("school_quiz_submissions")
+      .select("*")
+      .eq("quiz_id", String(req.params["id"]))
+      .eq("student_id", String(req.user!.id))
+      .order("submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      res.json(null);
+      return;
+    }
+    const s = data as DbQuizSubmission;
+    res.json({
+      id: s.id,
+      quizId: s.quiz_id,
+      studentId: s.student_id,
+      answers: s.answers,
+      score: s.score,
+      maxScore: s.max_score,
+      submittedAt: s.submitted_at,
+      createdAt: s.created_at,
+    });
+  },
+);
 
 /* ─── Report: Academic ───────────────────────────────────────── */
 router.get("/reports/academic", requireAuth, requireMgmt, async (_req, res) => {
   const db = getSupabase();
-  const [{ data: enrollments }, { data: grades }, { data: courses }] = await Promise.all([
-    db.from("school_enrollments").select("id, enrolled_at, created_at"),
-    db.from("school_grades").select("id, course_id, score, max_score"),
-    db.from("school_courses").select("id, title"),
-  ]);
-  const courseMap = new Map<string, string>((courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]));
+  const [{ data: enrollments }, { data: grades }, { data: courses }] =
+    await Promise.all([
+      db.from("school_enrollments").select("id, enrolled_at, created_at"),
+      db.from("school_grades").select("id, course_id, score, max_score"),
+      db.from("school_courses").select("id, title"),
+    ]);
+  const courseMap = new Map<string, string>(
+    (courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]),
+  );
   const now = new Date();
   const months: Record<string, { label: string; count: number }> = {};
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    months[k] = { label: d.toLocaleString("default", { month: "short", year: "2-digit" }), count: 0 };
+    months[k] = {
+      label: d.toLocaleString("default", { month: "short", year: "2-digit" }),
+      count: 0,
+    };
   }
-  (enrollments ?? []).forEach((e: { enrolled_at?: string; created_at: string }) => {
-    const k = (e.enrolled_at || e.created_at || "").slice(0, 7);
-    if (k in months) months[k].count++;
-  });
-  const enrollmentTrend = Object.values(months).map(m => ({ month: m.label, count: m.count }));
-  const gradesBandCount: Record<string, number> = { "A (90-100)": 0, "B (75-89)": 0, "C (60-74)": 0, "D (50-59)": 0, "F (<50)": 0 };
-  let pass = 0, fail = 0;
-  const byCourse: Record<string, { total: number; count: number; title: string }> = {};
-  (grades ?? []).forEach((g: { course_id: string; score: string; max_score: string }) => {
-    const pct = parseFloat(g.max_score) > 0 ? (parseFloat(g.score) / parseFloat(g.max_score)) * 100 : 0;
-    if (pct >= 90) gradesBandCount["A (90-100)"]++;
-    else if (pct >= 75) gradesBandCount["B (75-89)"]++;
-    else if (pct >= 60) gradesBandCount["C (60-74)"]++;
-    else if (pct >= 50) gradesBandCount["D (50-59)"]++;
-    else gradesBandCount["F (<50)"]++;
-    if (pct >= 50) pass++; else fail++;
-    if (!byCourse[g.course_id]) byCourse[g.course_id] = { total: 0, count: 0, title: courseMap.get(g.course_id) || g.course_id };
-    byCourse[g.course_id].total += pct;
-    byCourse[g.course_id].count++;
-  });
-  const gradeByBand = Object.entries(gradesBandCount).map(([band, count]) => ({ band, count }));
-  const passFail = [{ name: "Pass", value: pass }, { name: "Fail", value: fail }];
+  (enrollments ?? []).forEach(
+    (e: { enrolled_at?: string; created_at: string }) => {
+      const k = (e.enrolled_at || e.created_at || "").slice(0, 7);
+      if (k in months) months[k].count++;
+    },
+  );
+  const enrollmentTrend = Object.values(months).map((m) => ({
+    month: m.label,
+    count: m.count,
+  }));
+  const gradesBandCount: Record<string, number> = {
+    "A (90-100)": 0,
+    "B (75-89)": 0,
+    "C (60-74)": 0,
+    "D (50-59)": 0,
+    "F (<50)": 0,
+  };
+  let pass = 0,
+    fail = 0;
+  const byCourse: Record<
+    string,
+    { total: number; count: number; title: string }
+  > = {};
+  (grades ?? []).forEach(
+    (g: { course_id: string; score: string; max_score: string }) => {
+      const pct =
+        parseFloat(g.max_score) > 0
+          ? (parseFloat(g.score) / parseFloat(g.max_score)) * 100
+          : 0;
+      if (pct >= 90) gradesBandCount["A (90-100)"]++;
+      else if (pct >= 75) gradesBandCount["B (75-89)"]++;
+      else if (pct >= 60) gradesBandCount["C (60-74)"]++;
+      else if (pct >= 50) gradesBandCount["D (50-59)"]++;
+      else gradesBandCount["F (<50)"]++;
+      if (pct >= 50) pass++;
+      else fail++;
+      if (!byCourse[g.course_id])
+        byCourse[g.course_id] = {
+          total: 0,
+          count: 0,
+          title: courseMap.get(g.course_id) || g.course_id,
+        };
+      byCourse[g.course_id].total += pct;
+      byCourse[g.course_id].count++;
+    },
+  );
+  const gradeByBand = Object.entries(gradesBandCount).map(([band, count]) => ({
+    band,
+    count,
+  }));
+  const passFail = [
+    { name: "Pass", value: pass },
+    { name: "Fail", value: fail },
+  ];
   const gradesByCourse = Object.values(byCourse)
-    .map(c => ({ course: c.title.length > 22 ? c.title.slice(0, 20) + "…" : c.title, avg: Math.round(c.total / c.count) }))
-    .sort((a, b) => b.avg - a.avg).slice(0, 8);
+    .map((c) => ({
+      course: c.title.length > 22 ? c.title.slice(0, 20) + "…" : c.title,
+      avg: Math.round(c.total / c.count),
+    }))
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, 8);
   res.json({ enrollmentTrend, gradeByBand, passFail, gradesByCourse });
 });
 
 /* ─── Report: Finance ────────────────────────────────────────── */
 router.get("/reports/finance", requireAuth, requireMgmt, async (_req, res) => {
   const db = getSupabase();
-  const { data: payments } = await db.from("school_payments").select("id, amount, status, paid_at, created_at");
-  const numFn = (s: string) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
+  const { data: payments } = await db
+    .from("school_payments")
+    .select("id, amount, status, paid_at, created_at");
+  const numFn = (s: string) =>
+    parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
   const now = new Date();
   const months: Record<string, { label: string; revenue: number }> = {};
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    months[k] = { label: d.toLocaleString("default", { month: "short", year: "2-digit" }), revenue: 0 };
+    months[k] = {
+      label: d.toLocaleString("default", { month: "short", year: "2-digit" }),
+      revenue: 0,
+    };
   }
-  const all = (payments ?? []) as { status: string; amount: string; paid_at: string | null; created_at: string }[];
-  all.filter(p => p.status === "paid" && p.paid_at).forEach(p => {
-    const k = (p.paid_at!).slice(0, 7);
-    if (k in months) months[k].revenue += numFn(p.amount);
-  });
-  const revenueTrend = Object.values(months).map(m => ({ month: m.label, revenue: parseFloat(m.revenue.toFixed(2)) }));
+  const all = (payments ?? []) as {
+    status: string;
+    amount: string;
+    paid_at: string | null;
+    created_at: string;
+  }[];
+  all
+    .filter((p) => p.status === "paid" && p.paid_at)
+    .forEach((p) => {
+      const k = p.paid_at!.slice(0, 7);
+      if (k in months) months[k].revenue += numFn(p.amount);
+    });
+  const revenueTrend = Object.values(months).map((m) => ({
+    month: m.label,
+    revenue: parseFloat(m.revenue.toFixed(2)),
+  }));
   const statusCounts: Record<string, number> = {};
-  all.forEach(p => { statusCounts[p.status] = (statusCounts[p.status] || 0) + 1; });
-  const paymentStatus = Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
-  const totalCollected = all.filter(p => p.status === "paid").reduce((s, p) => s + numFn(p.amount), 0);
-  const totalOutstanding = all.filter(p => p.status === "pending" || p.status === "overdue").reduce((s, p) => s + numFn(p.amount), 0);
-  res.json({ revenueTrend, paymentStatus, totalCollected: parseFloat(totalCollected.toFixed(2)), totalOutstanding: parseFloat(totalOutstanding.toFixed(2)) });
-});
-
-/* ─── Report: HR ─────────────────────────────────────────────── */
-router.get("/reports/hr", requireAuth, requireMgmt, async (_req, res) => {
-  const db = getSupabase();
-  const [{ data: staff }, { data: leave }, { data: payroll }] = await Promise.all([
-    db.from("school_staff_records").select("id, department"),
-    db.from("school_leave_requests").select("id, type, status"),
-    db.from("school_payroll").select("id, period, gross, net"),
-  ]);
-  const numFn = (s: string) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 0;
-  const deptCounts: Record<string, number> = {};
-  (staff ?? []).forEach((s: { department: string }) => { const d = s.department || "Unassigned"; deptCounts[d] = (deptCounts[d] || 0) + 1; });
-  const headcountByDept = Object.entries(deptCounts).map(([dept, count]) => ({ dept, count }));
-  const leaveTypes: Record<string, { approved: number; pending: number; rejected: number }> = {};
-  (leave ?? []).forEach((l: { type: string; status: string }) => {
-    if (!leaveTypes[l.type]) leaveTypes[l.type] = { approved: 0, pending: 0, rejected: 0 };
-    const s = l.status as "approved" | "pending" | "rejected";
-    if (s in leaveTypes[l.type]) leaveTypes[l.type][s]++;
+  all.forEach((p) => {
+    statusCounts[p.status] = (statusCounts[p.status] || 0) + 1;
   });
-  const leaveByType = Object.entries(leaveTypes).map(([type, c]) => ({ type, ...c }));
-  const periodTotals: Record<string, { gross: number; net: number }> = {};
-  (payroll ?? []).forEach((p: { period: string; gross: string; net: string }) => {
-    if (!periodTotals[p.period]) periodTotals[p.period] = { gross: 0, net: 0 };
-    periodTotals[p.period].gross += numFn(p.gross);
-    periodTotals[p.period].net += numFn(p.net);
+  const paymentStatus = Object.entries(statusCounts).map(([name, value]) => ({
+    name,
+    value,
+  }));
+  const totalCollected = all
+    .filter((p) => p.status === "paid")
+    .reduce((s, p) => s + numFn(p.amount), 0);
+  const totalOutstanding = all
+    .filter((p) => p.status === "pending" || p.status === "overdue")
+    .reduce((s, p) => s + numFn(p.amount), 0);
+  res.json({
+    revenueTrend,
+    paymentStatus,
+    totalCollected: parseFloat(totalCollected.toFixed(2)),
+    totalOutstanding: parseFloat(totalOutstanding.toFixed(2)),
   });
-  const payrollByMonth = Object.entries(periodTotals).sort(([a], [b]) => a.localeCompare(b)).slice(-6)
-    .map(([period, v]) => ({ period, gross: parseFloat(v.gross.toFixed(2)), net: parseFloat(v.net.toFixed(2)) }));
-  res.json({ headcountByDept, leaveByType, payrollByMonth });
-});
-
-/* ─── Report: Attendance ─────────────────────────────────────── */
-router.get("/reports/attendance", requireAuth, requireMgmt, async (_req, res) => {
-  const db = getSupabase();
-  const [{ data: attendance }, { data: courses }] = await Promise.all([
-    db.from("school_attendance").select("id, course_id, session_date, status"),
-    db.from("school_courses").select("id, title"),
-  ]);
-  const courseMap = new Map<string, string>((courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]));
-  const byCourse: Record<string, { present: number; total: number; title: string }> = {};
-  (attendance ?? []).forEach((a: { course_id: string; status: string }) => {
-    if (!byCourse[a.course_id]) byCourse[a.course_id] = { present: 0, total: 0, title: courseMap.get(a.course_id) || a.course_id };
-    byCourse[a.course_id].total++;
-    if (a.status === "present" || a.status === "late") byCourse[a.course_id].present++;
-  });
-  const ratesByCourse = Object.values(byCourse)
-    .map(c => ({ course: c.title.length > 22 ? c.title.slice(0, 20) + "…" : c.title, rate: c.total > 0 ? Math.round((c.present / c.total) * 100) : 0 }))
-    .sort((a, b) => b.rate - a.rate).slice(0, 10);
-  const now = new Date();
-  const days: Record<string, { date: string; present: number; absent: number; late: number; excused: number }> = {};
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-    const k = d.toISOString().slice(0, 10);
-    days[k] = { date: k.slice(5), present: 0, absent: 0, late: 0, excused: 0 };
-  }
-  (attendance ?? []).forEach((a: { session_date: string; status: string }) => {
-    const k = (a.session_date || "").slice(0, 10);
-    if (k in days) (days[k] as Record<string, string | number>)[a.status] = ((days[k] as Record<string, string | number>)[a.status] as number || 0) + 1;
-  });
-  const dailyTrend = Object.values(days);
-  res.json({ ratesByCourse, dailyTrend });
 });
 
 export default router;
-
