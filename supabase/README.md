@@ -24,7 +24,7 @@ Run the SQL files in `migrations/` **once and in numeric order**. Use one of:
 | `migrations/011-015`                            | Historical demo-user and password-reset migrations                                      |
 | `migrations/016_self_paced_backend_cleanup.sql` | **Destructive forward-only self-paced academy cleanup**                                 |
 
-Do not use `drizzle-kit push`, schema push, or replay the bootstrap cleanup migrations as a production deletion strategy. Historical migration files are an audit trail and must remain unchanged.
+Do not use `drizzle-kit push`, schema push, or replay the bootstrap cleanup migrations as a production deletion strategy. Drizzle push scripts and configuration are intentionally absent so schema push cannot bypass migration 016. Historical migration files are an audit trail and must remain unchanged.
 
 ## Retained schema
 
@@ -44,12 +44,14 @@ The cleanup removes live sessions, attendance, announcements/events, parent link
 
 `016_self_paced_backend_cleanup.sql` permanently deletes retired data. Reverting application code does not restore it.
 
-1. Confirm the Supabase project identity and migration history. Inspect row counts, role distribution, publication membership, functions, policies, and dependencies before changing anything.
-2. Create an encrypted database backup **outside this repository**. Restore it to an isolated environment and confirm both retained and retired representative records are present before proceeding.
-3. Confirm at least one active `admin` or `super_admin` exists. The migration refuses to proceed otherwise.
-4. Quiesce application writes, then run `migrations/016_self_paced_backend_cleanup.sql` once. It runs in one transaction with bounded lock and statement timeouts. Named `RESTRICT` drops abort and roll back the whole transaction if an unknown dependency exists.
-5. Run `verification/016_self_paced_backend_cleanup.sql`. It is read-only and confirms retained tables, retired tables/columns, the active-role invariant, and the replacement stats function.
-6. Keep the encrypted backup and the matching previous application version for recovery. Restoring deleted rows requires that backup in an isolated database before any controlled production restoration.
+1. Deploy the retained-only API first. Do not apply 016 while an older API can still write retired tables or course `schedule`/`capacity` columns.
+2. Stop application writes (for example, enable maintenance mode and pause background jobs).
+3. Confirm the Supabase project identity and migration history. Inspect row counts, role distribution, publication membership, functions, policies, and dependencies before changing anything.
+4. Create an encrypted database backup **outside this repository**. Restore it to an isolated environment and confirm both retained and retired representative records are present before proceeding.
+5. Confirm at least one active `admin` or `super_admin` exists. The migration refuses to proceed otherwise.
+6. Run `migrations/016_self_paced_backend_cleanup.sql` once. It runs in one transaction with bounded lock and statement timeouts. Named `RESTRICT` drops abort and roll back the whole transaction if an unknown dependency exists.
+7. Run `verification/016_self_paced_backend_cleanup.sql`. It is read-only and confirms retained objects, retired tables/functions/type, statistics-function access, and the active-role invariant.
+8. Keep the encrypted backup and the matching previous application version for recovery. Restoring deleted rows requires that backup in an isolated database before any controlled production restoration.
 
 ## Backend environment variables
 

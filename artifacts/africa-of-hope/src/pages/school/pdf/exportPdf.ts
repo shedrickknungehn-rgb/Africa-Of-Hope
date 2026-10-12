@@ -90,3 +90,66 @@ export function exportReceiptPdf(payment: Payment, studentName: string) {
     `receipt-${payment.id.slice(-8)}-${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`,
   );
 }
+
+export function exportAllReceiptsPdf(payments: Payment[], studentName: string) {
+  const doc = new jsPDF();
+  addHeader(doc, "Payment History");
+  const amount = (value: string) =>
+    parseFloat(value.replace(/[^0-9.]/g, "")) || 0;
+  const paid = payments
+    .filter((payment) => payment.status === "paid")
+    .reduce((total, payment) => total + amount(payment.amount), 0);
+  const outstanding = payments
+    .filter(
+      (payment) => payment.status === "pending" || payment.status === "overdue",
+    )
+    .reduce((total, payment) => total + amount(payment.amount), 0);
+  doc.setFontSize(10);
+  doc.text(`Student: ${studentName}`, 14, 38);
+  doc.setFontSize(9);
+  doc.text(
+    `Paid: $${paid.toFixed(2)}   Outstanding: $${outstanding.toFixed(2)}`,
+    14,
+    45,
+  );
+  autoTable(doc, {
+    startY: 53,
+    head: [["Course", "Amount", "Method", "Status", "Date"]],
+    body: payments.map((payment) => [
+      payment.courseTitle || payment.courseId || "Course payment",
+      payment.amount,
+      payment.method || "—",
+      payment.status,
+      payment.paidAt
+        ? new Date(payment.paidAt).toLocaleDateString()
+        : payment.dueDate
+          ? `Due ${new Date(payment.dueDate).toLocaleDateString()}`
+          : "—",
+    ]),
+    headStyles: { fillColor: GREEN },
+    bodyStyles: { fontSize: 8 },
+    margin: { left: 14, right: 14 },
+  });
+  addFooter(doc);
+  doc.save(
+    `payments-${studentName.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`,
+  );
+}
+
+export function exportAcademyReportPdf(title: string, rows: string[][]) {
+  const doc = new jsPDF();
+  addHeader(doc, title);
+  doc.setFontSize(9);
+  doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 38);
+  autoTable(doc, {
+    startY: 46,
+    head: [["Metric", "Value"]],
+    body: rows,
+    headStyles: { fillColor: GREEN },
+    margin: { left: 14, right: 14 },
+  });
+  addFooter(doc);
+  doc.save(
+    `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}.pdf`,
+  );
+}

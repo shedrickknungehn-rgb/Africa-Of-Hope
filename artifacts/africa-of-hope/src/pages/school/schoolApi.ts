@@ -7,14 +7,14 @@ export const MANAGEMENT_ROLES = new Set<Role>(["admin", "super_admin"]);
 export const isManagement = (role: string): role is "admin" | "super_admin" =>
   MANAGEMENT_ROLES.has(role as Role);
 
-export const ROLE_LABELS: Record<Role, string> = {
+export const ROLE_LABELS: Record<string, string> = {
   super_admin: "Super Admin",
   admin: "Administrator",
   instructor: "Instructor",
   student: "Student",
 };
 
-export const ROLE_COLORS: Record<Role, string> = {
+export const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-100 text-red-800",
   admin: "bg-amber-100 text-amber-800",
   instructor: "bg-blue-100 text-blue-800",
@@ -35,7 +35,7 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
-  role: Role;
+  role: string;
   isActive?: boolean;
   createdAt: string;
 }
@@ -177,6 +177,15 @@ function storeSession(token: string, user: User, remember: boolean) {
   secondary.removeItem(USER_KEY);
 }
 
+export function persistSessionUser(user: User) {
+  const storage = localStorage.getItem(TOKEN_KEY)
+    ? localStorage
+    : sessionStorage.getItem(TOKEN_KEY)
+      ? sessionStorage
+      : null;
+  storage?.setItem(USER_KEY, JSON.stringify(user));
+}
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
 }
@@ -202,17 +211,28 @@ async function parseJson(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API}${path}`, { headers: authHeaders(), ...options });
   } catch {
-    throw new Error(UNREACHABLE);
+    throw new ApiError(UNREACHABLE);
   }
   const data = await parseJson(res);
   if (!res.ok)
-    throw new Error(
+    throw new ApiError(
       (data as { error?: string }).error || `Request failed (${res.status})`,
+      res.status,
     );
   return data as T;
 }

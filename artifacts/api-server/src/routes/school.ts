@@ -37,18 +37,24 @@ async function requireAuth(
     return;
   }
 
-  const { data, error } = await getSupabase()
-    .from("school_users")
-    .select("id, username, name, email, role, is_active")
-    .eq("id", tokenUser.id)
-    .maybeSingle();
+  let data: unknown;
+  let error: unknown;
+  try {
+    ({ data, error } = await getSupabase()
+      .from("school_users")
+      .select("id, username, name, email, role, is_active")
+      .eq("id", tokenUser.id)
+      .maybeSingle());
+  } catch {
+    res.status(503).json({ error: "Authentication service unavailable" });
+    return;
+  }
+  if (error) {
+    res.status(503).json({ error: "Authentication service unavailable" });
+    return;
+  }
   const user = data as Omit<DbUser, "password" | "phone" | "created_at"> | null;
-  if (
-    error ||
-    !user ||
-    user.is_active !== true ||
-    !SUPPORTED_ROLES.has(user.role)
-  ) {
+  if (!user || user.is_active !== true || !SUPPORTED_ROLES.has(user.role)) {
     res.status(401).json({ error: "This account is no longer authorized" });
     return;
   }
@@ -285,6 +291,16 @@ async function getNameMaps(db: ReturnType<typeof getSupabase>) {
     (courses ?? []).map((c: { id: string; title: string }) => [c.id, c.title]),
   );
   return { um, cm };
+}
+
+async function activeSuperAdminCount(db: ReturnType<typeof getSupabase>): Promise<number> {
+  const { data, error } = await db
+    .from("school_users")
+    .select("id")
+    .eq("role", "super_admin")
+    .eq("is_active", true);
+  if (error) throw error;
+  return (data ?? []).length;
 }
 
 /* ─── Auth ─────────────────────────────────────────────────── */
@@ -671,7 +687,7 @@ router.get("/users", requireAuth, async (req: AuthRequest, res) => {
   );
 });
 
-router.post("/users", requireAuth, requireMgmt, async (req, res) => {
+router.post("/users", requireAuth, requireMgmt, async (req: AuthRequest, res) => {
   const { username, password, name, email, phone, role } = req.body as Record<
     string,
     string
@@ -683,6 +699,10 @@ router.post("/users", requireAuth, requireMgmt, async (req, res) => {
   const accountRole = role || "student";
   if (!SUPPORTED_ROLES.has(accountRole)) {
     res.status(400).json({ error: "Unsupported academy role" });
+    return;
+  }
+  if (accountRole === "super_admin" && req.user!.role !== "super_admin") {
+    res.status(403).json({ error: "Super administrator access required" });
     return;
   }
   const db = getSupabase();
@@ -713,23 +733,56 @@ router.patch(
   requireMgmt,
   async (req: AuthRequest, res) => {
     const id = Number(req.params["id"]);
-    const { name, email, phone, role, password } = req.body as Record<
+    const { name, email, phone, role, password, isActive } = req.body as Record<
       string,
-      string
+      string | boolean
     >;
-    const upd: Record<string, string> = {};
+    const db = getSupabase();
+    const { data: existing, error: existingError } = await db
+      .from("school_users")
+      .select("id, role, is_active")
+      .eq("id", id)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const target = existing as { role: string; is_active: boolean };
+    const accountRole = typeof role === "string" ? role : target.role;
+    const accountIsActive = typeof isActive === "boolean" ? isActive : target.is_active;
+    if (typeof role === "string" && !SUPPORTED_ROLES.has(accountRole)) {
+      res.status(400).json({ error: "Unsupported academy role" });
+      return;
+    }
+    if (
+      (target.role === "super_admin" || accountRole === "super_admin") &&
+      req.user!.role !== "super_admin"
+    ) {
+      res.status(403).json({ error: "Super administrator access required" });
+      return;
+    }
+    if (isActive === true && !SUPPORTED_ROLES.has(accountRole)) {
+      res.status(400).json({ error: "Unsupported roles cannot be activated" });
+      return;
+    }
+    if (
+      target.role === "super_admin" &&
+      target.is_active &&
+      (!accountIsActive || accountRole !== "super_admin") &&
+      (await activeSuperAdminCount(db)) <= 1
+    ) {
+      res.status(409).json({ error: "At least one active super administrator is required" });
+      return;
+    }
+
+    const upd: Record<string, string | boolean> = {};
     if (name) upd["name"] = name;
     if (email !== undefined) upd["email"] = email;
     if (phone !== undefined) upd["phone"] = phone;
-    if (role) {
-      if (!SUPPORTED_ROLES.has(role)) {
-        res.status(400).json({ error: "Unsupported academy role" });
-        return;
-      }
-      upd["role"] = role;
-    }
+    if (typeof role === "string") upd["role"] = role;
     if (password) upd["password"] = password;
-    const db = getSupabase();
+    if (typeof isActive === "boolean") upd["is_active"] = isActive;
     const { data, error } = await db
       .from("school_users")
       .update(upd)
@@ -752,6 +805,25 @@ router.delete(
       return;
     }
     const db = getSupabase();
+    const { data: existing, error: existingError } = await db
+      .from("school_users")
+      .select("role, is_active")
+      .eq("id", id)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const target = existing as { role: string; is_active: boolean };
+    if (target.role === "super_admin" && req.user!.role !== "super_admin") {
+      res.status(403).json({ error: "Super administrator access required" });
+      return;
+    }
+    if (target.role === "super_admin" && target.is_active && (await activeSuperAdminCount(db)) <= 1) {
+      res.status(409).json({ error: "At least one active super administrator is required" });
+      return;
+    }
     const { error } = await db.from("school_users").delete().eq("id", id);
     if (error) throw error;
     res.status(204).send();
@@ -770,6 +842,10 @@ router.get("/courses", requireAuth, async (_req, res) => {
 });
 
 router.post("/courses", requireAuth, requireMgmt, async (req, res) => {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    res.status(400).json({ error: "Course payload required" });
+    return;
+  }
   if ("schedule" in req.body || "capacity" in req.body) {
     res.status(400).json({
       error: "schedule and capacity are not supported for self-paced courses",
@@ -805,6 +881,10 @@ router.post("/courses", requireAuth, requireMgmt, async (req, res) => {
 
 router.patch("/courses/:id", requireAuth, requireMgmt, async (req, res) => {
   const id = String(req.params["id"]);
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    res.status(400).json({ error: "Course payload required" });
+    return;
+  }
   if ("schedule" in req.body || "capacity" in req.body) {
     res.status(400).json({
       error: "schedule and capacity are not supported for self-paced courses",

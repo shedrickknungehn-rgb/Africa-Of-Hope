@@ -4,11 +4,13 @@ import {
   BarChart2,
   BookOpen,
   ClipboardList,
+  Edit2,
   FileText,
   GraduationCap,
   Home,
   LogOut,
   Menu,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -18,11 +20,13 @@ import {
   type Grade,
   type User,
   apiCreateGrade,
+  apiDeleteGrade,
   apiGetCourses,
   apiGetEnrollments,
   apiGetGrades,
   apiGetUsers,
   apiUpdateCourseMaterials,
+  apiUpdateGrade,
   clearSession,
 } from "./schoolApi";
 import AssessmentsTab from "./admin/AssessmentsTab";
@@ -395,14 +399,14 @@ function Materials({
   useEffect(() => {
     if (!target && courses[0]) setTarget(courses[0].id);
   }, [courses, target]);
+  const course = courses.find((item) => item.id === target);
   const save = async () => {
-    const course = courses.find((item) => item.id === target);
-    if (!course || !title || !url)
-      return setError("Choose a course and enter a title and link.");
+    if (!course || !title.trim())
+      return setError("Choose a course and enter a material title.");
     try {
       await apiUpdateCourseMaterials(course.id, [
         ...course.materials,
-        { title, url },
+        { title: title.trim(), url: url.trim() },
       ]);
       setTitle("");
       setUrl("");
@@ -411,6 +415,20 @@ function Materials({
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Unable to save material.",
+      );
+    }
+  };
+  const remove = async (index: number) => {
+    if (!course || !window.confirm("Remove this material?")) return;
+    try {
+      await apiUpdateCourseMaterials(
+        course.id,
+        course.materials.filter((_, itemIndex) => itemIndex !== index),
+      );
+      onRefresh();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to remove material.",
       );
     }
   };
@@ -427,9 +445,9 @@ function Materials({
             onChange={(event) => setTarget(event.target.value)}
             className="rounded-xl border border-gray-200 p-3 text-sm"
           >
-            {courses.map((course) => (
-              <option key={course.id} value={course.id}>
-                {course.title}
+            {courses.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
               </option>
             ))}
           </select>
@@ -442,7 +460,7 @@ function Materials({
           <input
             value={url}
             onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://…"
+            placeholder="Link / URL (optional)"
             className="rounded-xl border border-gray-200 p-3 text-sm"
           />
         </div>
@@ -453,29 +471,48 @@ function Materials({
           Save material
         </button>
       </section>
-      {courses.map((course) => (
-        <section key={course.id} className="rounded-2xl bg-white p-5 shadow-sm">
+      {course && (
+        <section className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="font-black">{course.title}</h2>
           {course.materials.length ? (
             <div className="mt-3 space-y-2">
-              {course.materials.map((material) => (
-                <a
-                  key={`${material.title}-${material.url}`}
-                  href={material.url}
-                  className="block rounded-xl bg-[#f7f5f0] p-3 text-sm font-bold text-[#1a6b2a]"
+              {course.materials.map((material, index) => (
+                <div
+                  key={`${material.title}-${index}`}
+                  className="flex items-center gap-3 rounded-xl bg-[#f7f5f0] p-3"
                 >
-                  {material.title}
-                </a>
+                  <FileText className="h-4 w-4 shrink-0 text-[#1a6b2a]" />
+                  {material.url ? (
+                    <a
+                      href={material.url}
+                      className="min-w-0 flex-1 truncate text-sm font-bold text-[#1a6b2a]"
+                    >
+                      {material.title}
+                    </a>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                      {material.title}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => remove(index)}
+                    className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                    aria-label={`Remove ${material.title}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               ))}
             </div>
           ) : (
             <p className="mt-2 text-sm text-gray-400">No materials yet.</p>
           )}
         </section>
-      ))}
+      )}
     </div>
   );
 }
+
 function Grades({
   courses,
   rosterFor,
@@ -488,30 +525,47 @@ function Grades({
   onRefresh: () => void;
 }) {
   const [courseId, setCourseId] = useState(courses[0]?.id || "");
-  const [studentId, setStudentId] = useState("");
-  const [assessment, setAssessment] = useState("");
-  const [score, setScore] = useState("");
-  const [maxScore, setMaxScore] = useState("100");
+  const [form, setForm] = useState({
+    studentId: "",
+    assessment: "",
+    score: "",
+    maxScore: "100",
+    weight: "",
+    comment: "",
+  });
+  const [editing, setEditing] = useState<Grade | null>(null);
   const [message, setMessage] = useState("");
   useEffect(() => {
     if (!courseId && courses[0]) setCourseId(courses[0].id);
   }, [courses, courseId]);
+  const reset = () => {
+    setForm({
+      studentId: "",
+      assessment: "",
+      score: "",
+      maxScore: "100",
+      weight: "",
+      comment: "",
+    });
+    setEditing(null);
+  };
   const save = async () => {
-    if (!courseId || !studentId || !assessment)
+    if (!courseId || !form.studentId || !form.assessment)
       return setMessage(
         "Choose a course and student, then name the assessment.",
       );
     try {
-      await apiCreateGrade({
-        courseId,
-        studentId,
-        assessment,
-        score,
-        maxScore,
-      });
-      setAssessment("");
-      setScore("");
-      setMessage("Grade recorded.");
+      if (editing)
+        await apiUpdateGrade(editing.id, {
+          assessment: form.assessment,
+          score: form.score,
+          maxScore: form.maxScore,
+          weight: form.weight,
+          comment: form.comment,
+        });
+      else await apiCreateGrade({ courseId, ...form });
+      setMessage(editing ? "Grade updated." : "Grade recorded.");
+      reset();
       onRefresh();
     } catch (reason) {
       setMessage(
@@ -519,21 +573,48 @@ function Grades({
       );
     }
   };
+  const edit = (grade: Grade) => {
+    setCourseId(grade.courseId);
+    setForm({
+      studentId: grade.studentId,
+      assessment: grade.assessment,
+      score: grade.score,
+      maxScore: grade.maxScore,
+      weight: grade.weight || "",
+      comment: grade.comment || "",
+    });
+    setEditing(grade);
+    setMessage("");
+  };
+  const remove = async (id: string) => {
+    if (!window.confirm("Delete this grade?")) return;
+    try {
+      await apiDeleteGrade(id);
+      setMessage("Grade deleted.");
+      onRefresh();
+    } catch (reason) {
+      setMessage(
+        reason instanceof Error ? reason.message : "Unable to delete grade.",
+      );
+    }
+  };
+  const courseGrades = grades.filter((grade) => grade.courseId === courseId);
   if (!courses.length)
     return <Empty text="No courses are assigned to you yet." />;
   return (
     <div className="space-y-5">
       <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="mb-4 font-black">Record grade</h2>
-        {message && <p className="mb-3 text-sm text-gray-600">{message}</p>}
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-black">
+            {editing ? "Edit grade" : "Record grade"}
+          </h2>
           <select
             value={courseId}
             onChange={(event) => {
               setCourseId(event.target.value);
-              setStudentId("");
+              reset();
             }}
-            className="rounded-xl border border-gray-200 p-3 text-sm"
+            className="rounded-xl border border-gray-200 p-2 text-sm"
           >
             {courses.map((course) => (
               <option key={course.id} value={course.id}>
@@ -541,9 +622,15 @@ function Grades({
               </option>
             ))}
           </select>
+        </div>
+        {message && <p className="mb-3 text-sm text-gray-600">{message}</p>}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <select
-            value={studentId}
-            onChange={(event) => setStudentId(event.target.value)}
+            value={form.studentId}
+            disabled={Boolean(editing)}
+            onChange={(event) =>
+              setForm({ ...form, studentId: event.target.value })
+            }
             className="rounded-xl border border-gray-200 p-3 text-sm"
           >
             <option value="">Choose student</option>
@@ -554,68 +641,131 @@ function Grades({
             ))}
           </select>
           <input
-            value={assessment}
-            onChange={(event) => setAssessment(event.target.value)}
+            value={form.assessment}
+            onChange={(event) =>
+              setForm({ ...form, assessment: event.target.value })
+            }
             placeholder="Assessment"
             className="rounded-xl border border-gray-200 p-3 text-sm"
           />
           <div className="flex gap-2">
             <input
-              value={score}
-              onChange={(event) => setScore(event.target.value)}
+              value={form.score}
+              onChange={(event) =>
+                setForm({ ...form, score: event.target.value })
+              }
               placeholder="Score"
               className="min-w-0 flex-1 rounded-xl border border-gray-200 p-3 text-sm"
             />
             <input
-              value={maxScore}
-              onChange={(event) => setMaxScore(event.target.value)}
+              value={form.maxScore}
+              onChange={(event) =>
+                setForm({ ...form, maxScore: event.target.value })
+              }
               placeholder="Max"
               className="w-20 rounded-xl border border-gray-200 p-3 text-sm"
             />
           </div>
+          <input
+            value={form.weight}
+            onChange={(event) =>
+              setForm({ ...form, weight: event.target.value })
+            }
+            placeholder="Weight (optional)"
+            className="rounded-xl border border-gray-200 p-3 text-sm"
+          />
+          <input
+            value={form.comment}
+            onChange={(event) =>
+              setForm({ ...form, comment: event.target.value })
+            }
+            placeholder="Comment (optional)"
+            className="rounded-xl border border-gray-200 p-3 text-sm lg:col-span-2"
+          />
         </div>
-        <button
-          onClick={save}
-          className="mt-3 rounded-xl bg-[#1a6b2a] px-4 py-2.5 text-sm font-bold text-white"
-        >
-          Save grade
-        </button>
+        <div className="mt-3 flex gap-3">
+          <button
+            onClick={save}
+            className="rounded-xl bg-[#1a6b2a] px-4 py-2.5 text-sm font-bold text-white"
+          >
+            {editing ? "Update grade" : "Save grade"}
+          </button>
+          {editing && (
+            <button
+              onClick={reset}
+              className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-600"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </section>
-      <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
+      <section className="overflow-x-auto rounded-2xl bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-[#f7f5f0] text-left text-xs uppercase text-gray-500">
             <tr>
               <th className="px-4 py-3">Student</th>
               <th className="px-4 py-3">Assessment</th>
               <th className="px-4 py-3">Score</th>
+              <th className="px-4 py-3">Weight</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
-            {grades
-              .filter((grade) =>
-                courses.some((course) => course.id === grade.courseId),
-              )
-              .map((grade) => (
-                <tr key={grade.id} className="border-t border-gray-100">
-                  <td className="px-4 py-3">
-                    {grade.studentName ||
-                      rosterFor(grade.courseId).find(
-                        (student) => student.id === grade.studentId,
-                      )?.name ||
-                      grade.studentId}
-                  </td>
-                  <td className="px-4 py-3">{grade.assessment}</td>
-                  <td className="px-4 py-3 font-bold text-[#1a6b2a]">
-                    {grade.score}/{grade.maxScore}
-                  </td>
-                </tr>
-              ))}
+            {courseGrades.map((grade) => (
+              <tr key={grade.id} className="border-t border-gray-100">
+                <td className="px-4 py-3">
+                  {grade.studentName ||
+                    rosterFor(grade.courseId).find(
+                      (student) => student.id === grade.studentId,
+                    )?.name ||
+                    grade.studentId}
+                </td>
+                <td className="px-4 py-3">
+                  <span>{grade.assessment}</span>
+                  {grade.comment && (
+                    <span className="block text-xs text-gray-400">
+                      {grade.comment}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-bold text-[#1a6b2a]">
+                  {grade.score}/{grade.maxScore}
+                </td>
+                <td className="px-4 py-3">{grade.weight || "—"}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => edit(grade)}
+                    className="mr-2 rounded-lg p-2 text-blue-600 hover:bg-blue-50"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => remove(grade.id)}
+                    className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!courseGrades.length && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="p-8 text-center text-sm text-gray-400"
+                >
+                  No grades recorded for this course yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </section>
     </div>
   );
 }
+
 function Empty({ text }: { text: string }) {
   return (
     <div className="rounded-2xl bg-white p-12 text-center text-sm text-gray-400 shadow-sm">

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Edit2, Plus, Search, Trash2, X } from "lucide-react";
+import { Edit2, Plus, Power, Search, Trash2, X } from "lucide-react";
 import type { User } from "../schoolApi";
 import {
   ALL_ROLES,
@@ -23,6 +23,10 @@ const emptyUser: Omit<User, "id" | "createdAt"> = {
   phone: "",
   role: "student",
 };
+const isSupportedRole = (role: string) =>
+  ALL_ROLES.includes(role as (typeof ALL_ROLES)[number]);
+const roleLabel = (role: string) =>
+  ROLE_LABELS[role] || `Legacy role: ${role.replaceAll("_", " ")}`;
 
 export default function UsersTab({ users, currentUser, onRefresh }: Props) {
   const [search, setSearch] = useState("");
@@ -31,6 +35,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
   const [editing, setEditing] = useState<User | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [saving, setSaving] = useState(false);
   const filtered = users.filter(
     (user) =>
@@ -46,7 +51,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
       name: user.name,
       email: user.email || "",
       phone: user.phone || "",
-      role: user.role,
+      role: isSupportedRole(user.role) ? user.role : "student",
     });
     setError("");
     setEditing(user);
@@ -78,6 +83,25 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
       onRefresh();
     }
   };
+  const toggleActivation = async (user: User) => {
+    if (!isSupportedRole(user.role)) {
+      setActionError(
+        "Convert this legacy role to a supported academy role before activation.",
+      );
+      return;
+    }
+    setActionError("");
+    try {
+      await apiUpdateUser(user.id, { isActive: user.isActive === false });
+      onRefresh();
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update account activation.",
+      );
+    }
+  };
   const Modal = ({ close, title }: { close: () => void; title: string }) => (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
       <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:max-w-md sm:rounded-2xl">
@@ -90,6 +114,12 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
         {error && (
           <p className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-600">
             {error}
+          </p>
+        )}
+        {!isSupportedRole(editing?.role || form.role) && editing && (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+            This inactive legacy account must be explicitly converted to a
+            supported academy role before its other details can be edited.
           </p>
         )}
         <div className="space-y-3">
@@ -114,6 +144,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
                   setForm({ ...form, [field.key]: event.target.value })
                 }
                 className="mt-1 w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm font-normal"
+                disabled={Boolean(editing && !isSupportedRole(editing.role))}
               />
             </label>
           ))}
@@ -128,7 +159,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
             >
               {ALL_ROLES.map((role) => (
                 <option key={role} value={role}>
-                  {ROLE_LABELS[role]}
+                  {roleLabel(role)}
                 </option>
               ))}
             </select>
@@ -146,7 +177,13 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
             disabled={saving}
             className="flex-1 rounded-xl bg-[#1a6b2a] py-3 text-sm font-bold text-white disabled:opacity-50"
           >
-            {saving ? "Saving…" : editing ? "Update" : "Add user"}
+            {saving
+              ? "Saving…"
+              : editing && !isSupportedRole(editing.role)
+                ? "Convert role"
+                : editing
+                  ? "Update"
+                  : "Add user"}
           </button>
         </div>
       </div>
@@ -154,6 +191,11 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
   );
   return (
     <div>
+      {actionError && (
+        <p className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[160px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -172,7 +214,7 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
           <option value="all">All roles</option>
           {ALL_ROLES.map((role) => (
             <option key={role} value={role}>
-              {ROLE_LABELS[role]}
+              {roleLabel(role)}
             </option>
           ))}
         </select>
@@ -208,10 +250,37 @@ export default function UsersTab({ users, currentUser, onRefresh }: Props) {
               </p>
             </div>
             <span
-              className={`rounded-full px-2 py-1 text-xs font-bold ${ROLE_COLORS[user.role]}`}
+              className={`rounded-full px-2 py-1 text-xs font-bold ${ROLE_COLORS[user.role] || "bg-gray-100 text-gray-700"}`}
             >
-              {ROLE_LABELS[user.role]}
+              {roleLabel(user.role)}
             </span>
+            {user.isActive === false && (
+              <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">
+                Inactive
+              </span>
+            )}
+            {isSupportedRole(user.role) ? (
+              <button
+                onClick={() => void toggleActivation(user)}
+                className={`rounded-lg p-2 ${user.isActive === false ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}
+                title={
+                  user.isActive === false
+                    ? "Activate account"
+                    : "Deactivate account"
+                }
+                aria-label={
+                  user.isActive === false
+                    ? "Activate account"
+                    : "Deactivate account"
+                }
+              >
+                <Power className="h-4 w-4" />
+              </button>
+            ) : (
+              <span className="text-xs font-medium text-amber-700">
+                Convert role to activate
+              </span>
+            )}
             <button
               onClick={() => openEdit(user)}
               className="rounded-lg bg-blue-50 p-2 text-blue-600"

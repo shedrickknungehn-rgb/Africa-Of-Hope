@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { apiGetMe, clearSession, getSession, isManagement } from "./schoolApi";
+import {
+  ApiError,
+  apiGetMe,
+  clearSession,
+  getSession,
+  isManagement,
+  persistSessionUser,
+} from "./schoolApi";
 import AdminDashboard from "./AdminDashboard";
 import InstructorDashboard from "./InstructorDashboard";
 import StudentDashboard from "./StudentDashboard";
@@ -19,11 +26,19 @@ export default function SchoolDashboard() {
     }
 
     apiGetMe()
-      .then((user) => setSessionState({ user }))
-      .catch(() => {
-        clearSession();
-        setSessionState(null);
-        navigate("/school");
+      .then((user) => {
+        persistSessionUser(user);
+        setSessionState({ user });
+      })
+      .catch((error: unknown) => {
+        if (
+          error instanceof ApiError &&
+          [401, 403].includes(error.status ?? 0)
+        ) {
+          clearSession();
+          setSessionState(null);
+          navigate("/school");
+        }
       })
       .finally(() => setCheckingSession(false));
   }, [navigate]);

@@ -24,4 +24,10 @@ export function getSupabase(): SupabaseClient {
   return _client;
 }
 
+// Tests inject an in-memory Supabase-compatible client so route authorization
+// can be exercised without a database connection.
+export function setSupabaseClientForTest(client: SupabaseClient | null): void {
+  _client = client;
+}
+
 export { getSupabase as supabase };

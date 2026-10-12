@@ -1,4 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   BookOpen,
   DollarSign,
@@ -16,7 +30,11 @@ import type {
   ReportOverview,
   User,
 } from "../schoolApi";
-import { apiGetAcademicReport, apiGetFinanceReport } from "../schoolApi";
+import {
+  ROLE_LABELS,
+  apiGetAcademicReport,
+  apiGetFinanceReport,
+} from "../schoolApi";
 
 interface Props {
   report: ReportOverview | null;
@@ -26,7 +44,10 @@ interface Props {
   payments: Payment[];
   grades: Grade[];
 }
-type Section = "overview" | "academic" | "finance";
+type Section = "overview" | "enrollment" | "academic" | "finance";
+const COLORS = ["#1a6b2a", "#d4a017", "#3b82f6", "#ef4444", "#8b5cf6"];
+const number = (value: string) =>
+  parseFloat(value.replace(/[^0-9.]/g, "")) || 0;
 
 function downloadCsv(
   filename: string,
@@ -47,6 +68,16 @@ function downloadCsv(
   link.click();
   URL.revokeObjectURL(href);
 }
+function Chart({ children }: { children: React.ReactNode }) {
+  return <div className="h-64">{children}</div>;
+}
+function ChartEmpty() {
+  return (
+    <div className="flex h-64 items-center justify-center text-sm text-gray-400">
+      No data available yet.
+    </div>
+  );
+}
 
 export default function ReportsTab({
   report,
@@ -59,191 +90,478 @@ export default function ReportsTab({
   const [section, setSection] = useState<Section>("overview");
   const [academic, setAcademic] = useState<AcademicReport | null>(null);
   const [finance, setFinance] = useState<FinanceReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   useEffect(() => {
-    apiGetAcademicReport()
-      .then(setAcademic)
-      .catch(() => {});
-    apiGetFinanceReport()
-      .then(setFinance)
-      .catch(() => {});
+    Promise.all([apiGetAcademicReport(), apiGetFinanceReport()])
+      .then(([academicData, financeData]) => {
+        setAcademic(academicData);
+        setFinance(financeData);
+      })
+      .catch((reason) =>
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load report details.",
+        ),
+      )
+      .finally(() => setLoading(false));
   }, []);
-  const controls = [
-    { key: "overview" as Section, label: "Core overview" },
-    { key: "academic" as Section, label: "Academic" },
-    { key: "finance" as Section, label: "Finance" },
-  ];
-  const exportAcademic = () =>
-    downloadCsv(
-      "academic-report.csv",
-      ["Student", "Course", "Assessment", "Score", "Grade"],
-      grades.map((grade) => [
-        grade.studentName || grade.studentId,
-        grade.courseTitle || grade.courseId,
-        grade.assessment,
-        `${grade.score}/${grade.maxScore}`,
-        grade.grade,
-      ]),
+  const enrollmentByStatus = useMemo(
+    () =>
+      Object.entries(
+        enrollments.reduce<Record<string, number>>(
+          (total, enrollment) => ({
+            ...total,
+            [enrollment.status]: (total[enrollment.status] || 0) + 1,
+          }),
+          {},
+        ),
+      ).map(([name, value]) => ({ name, value })),
+    [enrollments],
+  );
+  const enrollmentByCourse = useMemo(
+    () =>
+      courses
+        .map((course) => ({
+          name:
+            course.title.length > 18
+              ? `${course.title.slice(0, 17)}…`
+              : course.title,
+          enrollments: enrollments.filter(
+            (enrollment) => enrollment.courseId === course.id,
+          ).length,
+        }))
+        .sort((a, b) => b.enrollments - a.enrollments)
+        .slice(0, 8),
+    [courses, enrollments],
+  );
+  const usersByRole = useMemo(
+    () =>
+      Object.entries(
+        users.reduce<Record<string, number>>(
+          (total, user) => ({
+            ...total,
+            [user.role]: (total[user.role] || 0) + 1,
+          }),
+          {},
+        ),
+      ).map(([name, value]) => ({ name: ROLE_LABELS[name] || name, value })),
+    [users],
+  );
+  const localRevenue = useMemo(
+    () =>
+      payments
+        .filter((payment) => payment.status === "paid")
+        .reduce((sum, payment) => sum + number(payment.amount), 0),
+    [payments],
+  );
+  const localOutstanding = useMemo(
+    () =>
+      payments
+        .filter(
+          (payment) =>
+            payment.status === "pending" || payment.status === "overdue",
+        )
+        .reduce((sum, payment) => sum + number(payment.amount), 0),
+    [payments],
+  );
+  const exportPdf = async () => {
+    const { exportAcademyReportPdf } = await import("../pdf/exportPdf");
+    const rows =
+      section === "enrollment"
+        ? [
+            ["Total enrollments", String(enrollments.length)],
+            [
+              "Active enrollments",
+              String(
+                enrollments.filter((item) => item.status === "active").length,
+              ),
+            ],
+            ...enrollmentByStatus.map((item) => [
+              `${item.name} enrollments`,
+              String(item.value),
+            ]),
+          ]
+        : section === "academic"
+          ? [
+              ["Grades recorded", String(grades.length)],
+              ...(academic?.gradesByCourse || []).map((item) => [
+                item.course,
+                `${item.avg}%`,
+              ]),
+            ]
+          : section === "finance"
+            ? [
+                [
+                  "Collected",
+                  `$${(finance?.totalCollected ?? localRevenue).toFixed(2)}`,
+                ],
+                [
+                  "Outstanding",
+                  `$${(finance?.totalOutstanding ?? localOutstanding).toFixed(2)}`,
+                ],
+                ...(finance?.paymentStatus || []).map((item) => [
+                  `${item.name} payments`,
+                  String(item.value),
+                ]),
+              ]
+            : [
+                ["Users", String(report?.totalUsers ?? users.length)],
+                ["Courses", String(report?.totalCourses ?? courses.length)],
+                [
+                  "Enrollments",
+                  String(report?.totalEnrollments ?? enrollments.length),
+                ],
+                ["Payments", String(report?.totalPayments ?? payments.length)],
+              ];
+    exportAcademyReportPdf(
+      `${section[0].toUpperCase()}${section.slice(1)} Report`,
+      rows,
     );
-  const exportFinance = () =>
-    downloadCsv(
+  };
+  const exportCsv = () => {
+    if (section === "enrollment")
+      return downloadCsv(
+        "enrollment-report.csv",
+        ["Student", "Course", "Status", "Enrolled"],
+        enrollments.map((item) => [
+          item.studentName || item.studentId,
+          item.courseTitle || item.courseId,
+          item.status,
+          item.enrolledAt,
+        ]),
+      );
+    if (section === "academic")
+      return downloadCsv(
+        "academic-report.csv",
+        ["Student", "Course", "Assessment", "Score", "Weight", "Grade"],
+        grades.map((item) => [
+          item.studentName || item.studentId,
+          item.courseTitle || item.courseId,
+          item.assessment,
+          `${item.score}/${item.maxScore}`,
+          item.weight,
+          item.grade,
+        ]),
+      );
+    return downloadCsv(
       "finance-report.csv",
       ["Student", "Course", "Amount", "Status", "Reference"],
-      payments.map((payment) => [
-        payment.studentName || payment.studentId,
-        payment.courseTitle || payment.courseId,
-        payment.amount,
-        payment.status,
-        payment.reference,
+      payments.map((item) => [
+        item.studentName || item.studentId,
+        item.courseTitle || item.courseId,
+        item.amount,
+        item.status,
+        item.reference,
       ]),
     );
-  const stats = [
-    {
-      label: "Users",
-      value: report?.totalUsers ?? users.length,
-      icon: Users,
-      color: "bg-[#1a6b2a]",
-    },
-    {
-      label: "Courses",
-      value: report?.totalCourses ?? courses.length,
-      icon: BookOpen,
-      color: "bg-[#d4a017]",
-    },
-    {
-      label: "Enrollments",
-      value: report?.totalEnrollments ?? enrollments.length,
-      icon: GraduationCap,
-      color: "bg-blue-600",
-    },
-    {
-      label: "Payments",
-      value: report?.totalPayments ?? payments.length,
-      icon: DollarSign,
-      color: "bg-teal-600",
-    },
-  ];
+  };
+  const actions = (
+    <div className="flex gap-2">
+      <button
+        onClick={exportCsv}
+        className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700"
+      >
+        <Download className="h-3 w-3" />
+        CSV
+      </button>
+      <button
+        onClick={exportPdf}
+        className="flex items-center gap-2 rounded-xl bg-[#1a6b2a] px-3 py-2 text-xs font-bold text-white"
+      >
+        <Download className="h-3 w-3" />
+        PDF
+      </button>
+    </div>
+  );
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2">
-        {controls.map((control) => (
-          <button
-            key={control.key}
-            onClick={() => setSection(control.key)}
-            className={`rounded-xl px-4 py-2.5 text-sm font-bold ${section === control.key ? "bg-[#0d3d1a] text-white" : "bg-white text-gray-600 shadow-sm"}`}
-          >
-            {control.label}
-          </button>
-        ))}
+        {(["overview", "enrollment", "academic", "finance"] as Section[]).map(
+          (key) => (
+            <button
+              key={key}
+              onClick={() => setSection(key)}
+              className={`rounded-xl px-4 py-2.5 text-sm font-bold capitalize ${section === key ? "bg-[#0d3d1a] text-white" : "bg-white text-gray-600 shadow-sm"}`}
+            >
+              {key}
+            </button>
+          ),
+        )}
       </div>
-      {section === "overview" && (
+      {loading && (
+        <div className="rounded-2xl bg-white p-10 text-center text-sm text-gray-400 shadow-sm">
+          Loading report charts…
+        </div>
+      )}
+      {error && (
+        <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+      {!loading && section === "overview" && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {stats.map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="rounded-2xl bg-white p-5 shadow-sm">
-                <div
-                  className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${color}`}
-                >
-                  <Icon className="h-4 w-4 text-white" />
-                </div>
-                <p className="text-2xl font-black">{value}</p>
-                <p className="text-sm font-bold text-gray-600">{label}</p>
-              </div>
-            ))}
+            <Kpi
+              label="Users"
+              value={report?.totalUsers ?? users.length}
+              icon={Users}
+              color="bg-[#1a6b2a]"
+            />
+            <Kpi
+              label="Courses"
+              value={report?.totalCourses ?? courses.length}
+              icon={BookOpen}
+              color="bg-[#d4a017]"
+            />
+            <Kpi
+              label="Enrollments"
+              value={report?.totalEnrollments ?? enrollments.length}
+              icon={GraduationCap}
+              color="bg-blue-600"
+            />
+            <Kpi
+              label="Payments"
+              value={report?.totalPayments ?? payments.length}
+              icon={DollarSign}
+              color="bg-teal-600"
+            />
           </div>
           <section className="rounded-2xl bg-white p-5 shadow-sm">
-            <h2 className="font-black">Academy overview</h2>
-            <p className="mt-2 text-sm text-gray-500">
-              Core reports cover active academy users, courses, enrollments,
-              quizzes, grades, and payment records.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Metric label="Quizzes" value={report?.totalQuizzes ?? "—"} />
-              <Metric
-                label="Grades"
-                value={report?.totalGrades ?? grades.length}
-              />
-              <Metric
-                label="Active enrollments"
-                value={
-                  report?.activeEnrollments ??
-                  enrollments.filter(
-                    (enrollment) => enrollment.status === "active",
-                  ).length
-                }
-              />
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-black">Users by role</h2>
+              {actions}
             </div>
+            {usersByRole.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={usersByRole}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={85}
+                      label
+                    >
+                      {usersByRole.map((_, index) => (
+                        <Cell
+                          key={index}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
+            )}
           </section>
         </>
       )}
-      {section === "academic" && (
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-black">Academic report</h2>
-              <p className="text-sm text-gray-500">
-                Enrollments, quiz outcomes, and grades.
-              </p>
-            </div>
-            <button
-              onClick={exportAcademic}
-              className="flex items-center gap-2 rounded-xl bg-[#1a6b2a] px-4 py-2.5 text-sm font-bold text-white"
-            >
-              <Download className="h-4 w-4" />
-              Export CSV
-            </button>
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {(academic?.gradesByCourse || []).map((item) => (
-              <Metric
-                key={item.course}
-                label={item.course}
-                value={`${item.avg}%`}
-              />
-            ))}
-            {!academic?.gradesByCourse.length && (
-              <p className="text-sm text-gray-400">
-                No academic data is available yet.
-              </p>
+      {!loading && section === "enrollment" && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <ReportCard title="Enrollments by course" actions={actions}>
+            {enrollmentByCourse.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <BarChart data={enrollmentByCourse}>
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar
+                      dataKey="enrollments"
+                      fill="#1a6b2a"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
             )}
-          </div>
-        </section>
+          </ReportCard>
+          <ReportCard title="Enrollment status">
+            {enrollmentByStatus.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={enrollmentByStatus}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={85}
+                      label
+                    >
+                      {enrollmentByStatus.map((_, index) => (
+                        <Cell
+                          key={index}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
+            )}
+          </ReportCard>
+        </div>
       )}
-      {section === "finance" && (
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-black">Finance report</h2>
-              <p className="text-sm text-gray-500">
-                Payment records and outstanding balances.
-              </p>
+      {!loading && section === "academic" && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <ReportCard title="Average grade by course" actions={actions}>
+            {academic?.gradesByCourse.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <BarChart data={academic.gradesByCourse}>
+                    <XAxis dataKey="course" tick={{ fontSize: 10 }} />
+                    <YAxis unit="%" />
+                    <Tooltip />
+                    <Bar dataKey="avg" fill="#d4a017" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
+            )}
+          </ReportCard>
+          <ReportCard title="Grade distribution">
+            {academic?.gradeByBand.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <BarChart data={academic.gradeByBand}>
+                    <XAxis dataKey="band" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#1a6b2a" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
+            )}
+          </ReportCard>
+        </div>
+      )}
+      {!loading && section === "finance" && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <ReportCard title="Revenue trend" actions={actions}>
+            {finance?.revenueTrend.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <LineChart data={finance.revenueTrend}>
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#1a6b2a"
+                      strokeWidth={3}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
+            )}
+          </ReportCard>
+          <ReportCard title="Payment status">
+            <div className="mb-3 grid grid-cols-2 gap-3">
+              <Metric
+                label="Collected"
+                value={`$${(finance?.totalCollected ?? localRevenue).toFixed(2)}`}
+              />
+              <Metric
+                label="Outstanding"
+                value={`$${(finance?.totalOutstanding ?? localOutstanding).toFixed(2)}`}
+              />
             </div>
-            <button
-              onClick={exportFinance}
-              className="flex items-center gap-2 rounded-xl bg-[#1a6b2a] px-4 py-2.5 text-sm font-bold text-white"
-            >
-              <Download className="h-4 w-4" />
-              Export CSV
-            </button>
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Metric
-              label="Collected"
-              value={finance ? `$${finance.totalCollected}` : "—"}
-            />
-            <Metric
-              label="Outstanding"
-              value={finance ? `$${finance.totalOutstanding}` : "—"}
-            />
-          </div>
-        </section>
+            {finance?.paymentStatus.length ? (
+              <Chart>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={finance.paymentStatus}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={75}
+                      label
+                    >
+                      {finance.paymentStatus.map((_, index) => (
+                        <Cell
+                          key={index}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Chart>
+            ) : (
+              <ChartEmpty />
+            )}
+          </ReportCard>
+        </div>
       )}
     </div>
   );
 }
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Kpi({
+  label,
+  value,
+  icon: Icon,
+  color,
+}: {
+  label: string;
+  value: number;
+  icon: typeof Users;
+  color: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-white p-5 shadow-sm">
+      <div
+        className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${color}`}
+      >
+        <Icon className="h-4 w-4 text-white" />
+      </div>
+      <p className="text-2xl font-black">{value}</p>
+      <p className="text-sm font-bold text-gray-600">{label}</p>
+    </div>
+  );
+}
+function ReportCard({
+  title,
+  actions,
+  children,
+}: {
+  title: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-black">{title}</h2>
+        {actions}
+      </div>
+      {children}
+    </section>
+  );
+}
+function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-[#f7f5f0] p-4">
-      <p className="text-2xl font-black text-[#0f0f0f]">{value}</p>
+      <p className="text-lg font-black">{value}</p>
       <p className="text-xs font-bold text-gray-500">{label}</p>
     </div>
   );

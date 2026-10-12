@@ -13,7 +13,6 @@ SET LOCAL statement_timeout = '30s';
 DO $$
 DECLARE
   required_table TEXT;
-  unexpected_function TEXT;
 BEGIN
   FOREACH required_table IN ARRAY ARRAY[
     'school_users',
@@ -44,33 +43,6 @@ BEGIN
     END IF;
   END LOOP;
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.school_users
-    WHERE is_active
-      AND role IN ('admin', 'super_admin')
-  ) THEN
-    RAISE EXCEPTION '016 cleanup would leave no active administrator';
-  END IF;
-
-  -- PL/pgSQL bodies are not consistently represented in pg_depend. Refuse to
-  -- continue when an unaccounted-for public function names a retired object.
-  SELECT p.oid::regprocedure::TEXT
-  INTO unexpected_function
-  FROM pg_proc AS p
-  JOIN pg_namespace AS n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public'
-    AND p.oid NOT IN (
-      'public.get_school_stats()'::regprocedure,
-      'public.cleanup_old_sessions(integer)'::regprocedure,
-      'public.get_active_announcements(text)'::regprocedure
-    )
-    AND lower(pg_get_functiondef(p.oid)) ~ '\m(school_sessions|school_attendance|school_announcements|school_events|parent_student_links|school_staff_records|school_leave_requests|school_payroll|school_messages|school_timetable|school_exams|school_books|school_borrows|announcements)\M'
-  LIMIT 1;
-
-  IF unexpected_function IS NOT NULL THEN
-    RAISE EXCEPTION '016 cleanup blocked by unaccounted-for function dependency: %', unexpected_function;
-  END IF;
 END;
 $$;
 
@@ -94,6 +66,46 @@ LOCK TABLE
   public.school_borrows,
   public.announcements
 IN ACCESS EXCLUSIVE MODE;
+
+DO $$
+DECLARE
+  unexpected_function TEXT;
+BEGIN
+  -- Check this only after school_users is locked so concurrent account updates
+  -- cannot invalidate the last-administrator safety check.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.school_users
+    WHERE is_active
+      AND role IN ('admin', 'super_admin')
+  ) THEN
+    RAISE EXCEPTION '016 cleanup would leave no active administrator';
+  END IF;
+
+  -- PL/pgSQL bodies are not consistently represented in pg_depend. Refuse to
+  -- continue when an unaccounted-for user-defined function or procedure in a
+  -- non-system schema names a retired object. pg_get_functiondef does not
+  -- support aggregate or window-function routine kinds.
+  SELECT p.oid::regprocedure::TEXT
+  INTO unexpected_function
+  FROM pg_proc AS p
+  JOIN pg_namespace AS n ON n.oid = p.pronamespace
+  WHERE p.prokind IN ('f', 'p')
+    AND n.nspname <> 'information_schema'
+    AND n.nspname !~ '^pg_'
+    AND p.oid NOT IN (
+      'public.get_school_stats()'::regprocedure,
+      'public.cleanup_old_sessions(integer)'::regprocedure,
+      'public.get_active_announcements(text)'::regprocedure
+    )
+    AND lower(pg_get_functiondef(p.oid)) ~ '\m(school_sessions|school_attendance|school_announcements|school_events|parent_student_links|school_staff_records|school_leave_requests|school_payroll|school_messages|school_timetable|school_exams|school_books|school_borrows|announcements)\M'
+  LIMIT 1;
+
+  IF unexpected_function IS NOT NULL THEN
+    RAISE EXCEPTION '016 cleanup blocked by unaccounted-for function dependency: %', unexpected_function;
+  END IF;
+END;
+$$;
 
 -- Retire every unsupported account without deleting its identity or history.
 UPDATE public.school_users
@@ -162,6 +174,10 @@ AS $$
     )
   );
 $$;
+
+REVOKE ALL ON FUNCTION public.get_school_stats() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_school_stats() FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_school_stats() TO service_role;
 
 -- Restrictive drops preserve the transaction if any unknown view, trigger,
 -- policy, or other external dependency was added outside this migration set.

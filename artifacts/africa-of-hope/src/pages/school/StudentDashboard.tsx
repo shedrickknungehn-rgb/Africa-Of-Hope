@@ -314,16 +314,26 @@ function CoursesView({ courses }: { courses: Course[] }) {
           </p>
           {course.materials.length > 0 ? (
             <div className="mt-4 flex flex-wrap gap-2">
-              {course.materials.map((material) => (
-                <a
-                  key={`${material.title}-${material.url}`}
-                  href={material.url}
-                  className="inline-flex items-center gap-1 rounded-lg bg-[#1a6b2a]/10 px-3 py-2 text-xs font-bold text-[#1a6b2a]"
-                >
-                  <FileText className="h-3 w-3" />
-                  {material.title}
-                </a>
-              ))}
+              {course.materials.map((material, index) =>
+                material.url ? (
+                  <a
+                    key={`${material.title}-${index}`}
+                    href={material.url}
+                    className="inline-flex items-center gap-1 rounded-lg bg-[#1a6b2a]/10 px-3 py-2 text-xs font-bold text-[#1a6b2a]"
+                  >
+                    <FileText className="h-3 w-3" />
+                    {material.title}
+                  </a>
+                ) : (
+                  <span
+                    key={`${material.title}-${index}`}
+                    className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700"
+                  >
+                    <FileText className="h-3 w-3" />
+                    {material.title}
+                  </span>
+                ),
+              )}
             </div>
           ) : (
             <p className="mt-4 text-sm text-gray-400">
@@ -399,13 +409,31 @@ function PaymentsView({
   payments: Payment[];
   studentName: string;
 }) {
+  const statusColor: Record<string, string> = {
+    paid: "bg-green-100 text-green-700",
+    pending: "bg-amber-100 text-amber-700",
+    overdue: "bg-red-100 text-red-700",
+    waived: "bg-gray-100 text-gray-700",
+  };
   const download = async (payment: Payment) => {
     const { exportReceiptPdf } = await import("./pdf/exportPdf");
     exportReceiptPdf(payment, studentName);
   };
+  const downloadAll = async () => {
+    const { exportAllReceiptsPdf } = await import("./pdf/exportPdf");
+    exportAllReceiptsPdf(payments, studentName);
+  };
   if (!payments.length) return <Empty text="No payment records yet." />;
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          onClick={downloadAll}
+          className="rounded-xl bg-[#0d3d1a] px-4 py-2.5 text-sm font-bold text-white"
+        >
+          Download all receipts
+        </button>
+      </div>
       {payments.map((payment) => (
         <div
           key={payment.id}
@@ -417,7 +445,11 @@ function PaymentsView({
             </p>
             <p className="text-sm text-gray-500">
               {payment.amount} ·{" "}
-              <span className="capitalize">{payment.status}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${statusColor[payment.status] || "bg-gray-100 text-gray-700"}`}
+              >
+                {payment.status}
+              </span>
             </p>
           </div>
           <button
@@ -433,7 +465,7 @@ function PaymentsView({
 }
 
 function StudentAssessments({
-  user,
+  user: _user,
   courses,
 }: {
   user: User;
@@ -443,11 +475,11 @@ function StudentAssessments({
   const [submissions, setSubmissions] = useState<
     Record<string, QuizSubmission | null>
   >({});
-  const [answers, setAnswers] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [message, setMessage] = useState("");
+  const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   useEffect(() => {
+    let alive = true;
     apiGetQuizzes()
       .then(async (items) => {
         const available = items.filter(
@@ -455,7 +487,6 @@ function StudentAssessments({
             quiz.status === "published" &&
             courses.some((course) => course.id === quiz.courseId),
         );
-        setQuizzes(available);
         const entries = await Promise.all(
           available.map(
             async (quiz) =>
@@ -465,96 +496,95 @@ function StudentAssessments({
               ] as const,
           ),
         );
-        setSubmissions(Object.fromEntries(entries));
+        if (alive) {
+          setQuizzes(available);
+          setSubmissions(Object.fromEntries(entries));
+        }
       })
-      .catch(() => {});
+      .catch(
+        (reason) =>
+          alive &&
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load assessments.",
+          ),
+      )
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
   }, [courses]);
-  const submit = async (quiz: Quiz) => {
-    try {
-      const result = await apiSubmitQuiz(quiz.id, answers[quiz.id] || {});
-      setSubmissions((current) => ({ ...current, [quiz.id]: result }));
-      setMessage("Assessment submitted.");
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Unable to submit assessment.",
-      );
-    }
-  };
+  if (activeQuiz)
+    return (
+      <QuizTaker
+        quiz={activeQuiz}
+        onCancel={() => setActiveQuiz(null)}
+        onSubmitted={(submission) => {
+          setSubmissions((current) => ({
+            ...current,
+            [activeQuiz.id]: submission,
+          }));
+          setActiveQuiz(null);
+        }}
+      />
+    );
+  if (loading) return <Loading text="Loading assessments…" />;
+  if (error) return <ResultState tone="error" text={error} />;
   if (!quizzes.length)
     return (
       <Empty text="No assessments are available for your enrolled courses." />
     );
   return (
     <div className="space-y-4">
-      {message && (
-        <p className="rounded-xl bg-green-50 p-3 text-sm text-green-700">
-          {message}
-        </p>
-      )}
       {quizzes.map((quiz) => {
         const submission = submissions[quiz.id];
+        const due = quiz.dueDate ? new Date(quiz.dueDate) : null;
+        const overdue = Boolean(due && due.getTime() < Date.now());
+        const percentage =
+          submission && submission.maxScore
+            ? Math.round((submission.score / submission.maxScore) * 100)
+            : null;
         return (
           <section key={quiz.id} className="rounded-2xl bg-white p-5 shadow-sm">
-            <h2 className="font-black text-[#0f0f0f]">{quiz.title}</h2>
-            <p className="mt-1 text-sm text-gray-500">{quiz.instructions}</p>
-            {submission ? (
-              <p className="mt-4 text-sm font-bold text-[#1a6b2a]">
-                Submitted: {submission.score}/{submission.maxScore}
-              </p>
-            ) : (
-              <div className="mt-4 space-y-4">
-                {quiz.questions.map((question) => (
-                  <label
-                    key={question.id}
-                    className="block text-sm font-medium text-[#0f0f0f]"
-                  >
-                    <span>{question.text}</span>
-                    {question.type === "mcq" ? (
-                      <select
-                        className="mt-2 block w-full rounded-xl border border-gray-200 p-2"
-                        value={answers[quiz.id]?.[question.id] || ""}
-                        onChange={(event) =>
-                          setAnswers((current) => ({
-                            ...current,
-                            [quiz.id]: {
-                              ...current[quiz.id],
-                              [question.id]: event.target.value,
-                            },
-                          }))
-                        }
-                      >
-                        <option value="">Choose an answer</option>
-                        {question.options?.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        className="mt-2 block w-full rounded-xl border border-gray-200 p-2"
-                        value={answers[quiz.id]?.[question.id] || ""}
-                        onChange={(event) =>
-                          setAnswers((current) => ({
-                            ...current,
-                            [quiz.id]: {
-                              ...current[quiz.id],
-                              [question.id]: event.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    )}
-                  </label>
-                ))}
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="font-black text-[#0f0f0f]">{quiz.title}</h2>
+                <p className="mt-1 text-sm text-gray-500">{quiz.courseTitle}</p>
+                <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
+                  <span>{quiz.questions.length} questions</span>
+                  {quiz.timeLimitMins > 0 && (
+                    <span>Time limit: {quiz.timeLimitMins} min</span>
+                  )}
+                  {due && (
+                    <span className={overdue ? "font-bold text-red-600" : ""}>
+                      Due {due.toLocaleString()}
+                      {overdue ? " (overdue)" : ""}
+                    </span>
+                  )}
+                </div>
+                {quiz.instructions && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    {quiz.instructions}
+                  </p>
+                )}
+              </div>
+              <div className="text-right">
+                {submission && (
+                  <p className="mb-2 text-sm font-bold text-[#1a6b2a]">
+                    Best score: {submission.score}/{submission.maxScore}
+                    {percentage !== null && ` (${percentage}%)`}
+                  </p>
+                )}
                 <button
-                  onClick={() => submit(quiz)}
-                  className="rounded-xl bg-[#d4a017] px-4 py-2.5 text-sm font-bold text-[#0f0f0f]"
+                  disabled={overdue}
+                  onClick={() => setActiveQuiz(quiz)}
+                  className="rounded-xl bg-[#1a6b2a] px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
-                  Submit assessment
+                  {submission ? "Retake" : "Start assessment"}
                 </button>
               </div>
-            )}
+            </div>
           </section>
         );
       })}
@@ -562,6 +592,165 @@ function StudentAssessments({
   );
 }
 
+function QuizTaker({
+  quiz,
+  onCancel,
+  onSubmitted,
+}: {
+  quiz: Quiz;
+  onCancel: () => void;
+  onSubmitted: (submission: QuizSubmission) => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [timeLeft, setTimeLeft] = useState<number | null>(
+    quiz.timeLimitMins > 0 ? quiz.timeLimitMins * 60 : null,
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      onSubmitted(await apiSubmitQuiz(quiz.id, answers));
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to submit assessment.",
+      );
+      setSubmitting(false);
+    }
+  };
+  useEffect(() => {
+    if (timeLeft === null) return;
+    if (timeLeft <= 0) {
+      void submit();
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setTimeLeft((time) => (time === null ? null : time - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [timeLeft]);
+  const setAnswer = (questionId: string, value: string) =>
+    setAnswers((current) => ({ ...current, [questionId]: value }));
+  return (
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#0d3d1a] p-5 text-white">
+        <div>
+          <h2 className="font-black">{quiz.title}</h2>
+          <p className="text-sm text-white/70">
+            {quiz.questions.length} questions
+          </p>
+        </div>
+        {timeLeft !== null && (
+          <div
+            className={`rounded-xl px-4 py-2 text-lg font-black ${timeLeft <= 60 ? "animate-pulse bg-red-500" : "bg-white/10"}`}
+          >
+            {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+          </div>
+        )}
+      </header>
+      {quiz.questions.map((question, index) => (
+        <section
+          key={question.id}
+          className="rounded-2xl bg-white p-5 shadow-sm"
+        >
+          <p className="font-bold">
+            {index + 1}. {question.text}
+          </p>
+          {question.type === "mcq" && (
+            <div className="mt-3 space-y-2">
+              {question.options?.map((option) => (
+                <label
+                  key={option}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl bg-[#f7f5f0] p-3"
+                >
+                  <input
+                    type="radio"
+                    name={question.id}
+                    checked={answers[question.id] === option}
+                    onChange={() => setAnswer(question.id, option)}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {question.type === "true_false" && (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {["True", "False"].map((option) => (
+                <label
+                  key={option}
+                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 font-bold ${answers[question.id] === option ? "border-[#1a6b2a] bg-[#1a6b2a]/10" : "border-gray-200"}`}
+                >
+                  <input
+                    type="radio"
+                    name={question.id}
+                    checked={answers[question.id] === option}
+                    onChange={() => setAnswer(question.id, option)}
+                  />
+                  {option}
+                </label>
+              ))}
+            </div>
+          )}
+          {question.type === "short_answer" && (
+            <textarea
+              value={answers[question.id] || ""}
+              onChange={(event) => setAnswer(question.id, event.target.value)}
+              rows={3}
+              className="mt-3 w-full rounded-xl border border-gray-200 p-3"
+              placeholder="Write your answer…"
+            />
+          )}
+        </section>
+      ))}
+      {error && <ResultState tone="error" text={error} />}
+      <div className="flex gap-3">
+        <button
+          onClick={onCancel}
+          disabled={submitting}
+          className="rounded-xl bg-gray-100 px-4 py-3 text-sm font-bold text-gray-700"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => void submit()}
+          disabled={submitting}
+          className="flex-1 rounded-xl bg-[#1a6b2a] py-3 text-sm font-bold text-white disabled:opacity-50"
+        >
+          {submitting ? "Submitting…" : "Submit assessment"}
+        </button>
+      </div>
+    </div>
+  );
+}
+function Loading({ text }: { text: string }) {
+  return (
+    <div className="rounded-2xl bg-white p-12 text-center text-sm text-gray-500 shadow-sm">
+      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#1a6b2a] border-t-transparent" />
+      {text}
+    </div>
+  );
+}
+function ResultState({
+  tone,
+  text,
+}: {
+  tone: "error" | "success";
+  text: string;
+}) {
+  return (
+    <p
+      className={`rounded-xl p-3 text-sm ${tone === "error" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}
+    >
+      {text}
+    </p>
+  );
+}
 function Empty({ text }: { text: string }) {
   return (
     <div className="rounded-2xl bg-white p-12 text-center text-sm text-gray-400 shadow-sm">

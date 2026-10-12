@@ -4,6 +4,8 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
+export { setSupabaseClientForTest } from "./lib/db";
+
 const app: Express = express();
 
 const allowedOrigins = (process.env["ALLOWED_ORIGINS"] ?? "")

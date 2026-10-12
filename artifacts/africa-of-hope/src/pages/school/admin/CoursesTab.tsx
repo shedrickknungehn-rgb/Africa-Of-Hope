@@ -29,7 +29,9 @@ export default function CoursesTab({ courses, users, onRefresh }: Props) {
   const [form, setForm] = useState({ ...emptyCourse });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const instructors = users.filter((user) => user.role === "instructor");
+  const instructors = users.filter(
+    (user) => user.role === "instructor" && user.isActive !== false,
+  );
   const filtered = courses.filter((course) =>
     `${course.title} ${course.description}`
       .toLowerCase()
@@ -231,6 +233,11 @@ export default function CoursesTab({ courses, users, onRefresh }: Props) {
                         {course.category}
                       </span>
                     )}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-bold capitalize ${course.status === "active" ? "bg-green-100 text-green-700" : course.status === "archived" ? "bg-gray-100 text-gray-600" : "bg-amber-100 text-amber-700"}`}
+                    >
+                      {course.status}
+                    </span>
                   </div>
                   {course.description && (
                     <p className="mt-2 text-sm text-gray-500">
