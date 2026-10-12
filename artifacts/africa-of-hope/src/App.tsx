@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -35,6 +35,11 @@ function PageLoader() {
 function AppRoutes() {
   const [location] = useLocation();
   const isSchool = location.startsWith("/school");
+
+  useEffect(() => {
+    document.body.classList.toggle("school-portal-active", isSchool);
+    return () => document.body.classList.remove("school-portal-active");
+  }, [isSchool]);
 
   return (
     <>

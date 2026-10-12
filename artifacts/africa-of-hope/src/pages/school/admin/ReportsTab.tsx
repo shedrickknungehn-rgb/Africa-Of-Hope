@@ -68,14 +68,36 @@ function downloadCsv(
   link.click();
   URL.revokeObjectURL(href);
 }
-function Chart({ children }: { children: React.ReactNode }) {
-  return <div className="h-64">{children}</div>;
+function Chart({
+  children,
+  className = "h-64",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={className}>{children}</div>;
 }
 function ChartEmpty() {
   return (
     <div className="flex h-64 items-center justify-center text-sm text-gray-400">
       No data available yet.
     </div>
+  );
+}
+function PieLegend({ items }: { items: { name: string; value: number }[] }) {
+  return (
+    <ul className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-gray-600 sm:grid-cols-3">
+      {items.map((item, index) => (
+        <li key={item.name} className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: COLORS[index % COLORS.length] }}
+          />
+          <span className="truncate">{item.name}</span>
+          <span className="shrink-0 font-semibold text-gray-900">{item.value}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -334,15 +356,15 @@ export default function ReportsTab({
               {actions}
             </div>
             {usersByRole.length ? (
-              <Chart>
+              <>
+                <Chart className="h-40 sm:h-64">
                 <ResponsiveContainer>
                   <PieChart>
                     <Pie
                       data={usersByRole}
                       dataKey="value"
                       nameKey="name"
-                      outerRadius={85}
-                      label
+                      outerRadius={80}
                     >
                       {usersByRole.map((_, index) => (
                         <Cell
@@ -352,10 +374,11 @@ export default function ReportsTab({
                       ))}
                     </Pie>
                     <Tooltip />
-                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
-              </Chart>
+                </Chart>
+                <PieLegend items={usersByRole} />
+              </>
             ) : (
               <ChartEmpty />
             )}
