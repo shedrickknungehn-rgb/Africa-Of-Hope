@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -20,7 +20,6 @@ const Advocacy = lazy(() => import("@/pages/Advocacy"));
 const Team = lazy(() => import("@/pages/Team"));
 const SchoolLogin = lazy(() => import("@/pages/school/SchoolLogin"));
 const SchoolDashboard = lazy(() => import("@/pages/school/SchoolDashboard"));
-const LiveClass = lazy(() => import("@/pages/school/LiveClass"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient();
@@ -37,6 +36,11 @@ function AppRoutes() {
   const [location] = useLocation();
   const isSchool = location.startsWith("/school");
 
+  useEffect(() => {
+    document.body.classList.toggle("school-portal-active", isSchool);
+    return () => document.body.classList.remove("school-portal-active");
+  }, [isSchool]);
+
   return (
     <>
       {!isSchool && <Navbar />}
@@ -44,7 +48,6 @@ function AppRoutes() {
         <Switch>
           <Route path="/school" component={SchoolLogin} />
           <Route path="/school/dashboard" component={SchoolDashboard} />
-          <Route path="/school/class/:id" component={LiveClass} />
 
           <Route path="/" component={Home} />
           <Route path="/about" component={About} />

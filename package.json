@@ -13,9 +13,5 @@
   "devDependencies": {
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
-  },
-  "dependencies": {
-    "@stream-io/video-client": "^1.53.0",
-    "@stream-io/video-react-sdk": "^1.37.5"
   }
 }
